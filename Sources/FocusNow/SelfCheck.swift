@@ -8,13 +8,14 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "commits", "outside", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "timer", "digits", "commits", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
             "iconFile=\(Bundle.main.url(forResource: "AppIcon", withExtension: "icns") != nil)")
         if phases.contains("stats") { await checkStats(snap) }
         if phases.contains("settings") { await checkSettings(snap) }
+        if phases.contains("calendar") { await checkCalendar(snap) }
         if phases.contains("timer") { await checkTimer(snap) }
         if phases.contains("digits") { await checkDigits(snap) }
         if phases.contains("commits") { await checkCommits(snap) }
@@ -22,7 +23,7 @@ extension AppDelegate {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
                 "idleRemaining=\(engine.remainingSeconds) goalHistory=\(settings.goalHistory.count) " +
-                "loginItemStatus=\(SMAppService.mainApp.status.rawValue)")
+                "loginItemStatus=\(SMAppService.mainApp.status.rawValue) statsDisplay=\(calendarPrefs.statsDisplay)")
         }
         if phases.contains("outside") { await checkOutside(snap) }
         // Last: it quits with a session running, for the persist phase's relaunch.
@@ -614,7 +615,7 @@ extension AppDelegate {
         return handled
     }
 
-    private func closeAllWindows() {
+    func closeAllWindows() {
         for window in NSApp.windows where window.isVisible && window.title.isEmpty == false {
             window.performClose(nil)
         }

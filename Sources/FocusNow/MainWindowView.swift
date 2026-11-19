@@ -19,6 +19,8 @@ struct MainWindowView: View {
     let engine: TimerEngine
     let settings: SettingsStore
     let statsModel: StatsViewModel
+    let calendarModel: CalendarModel
+    let calendarPrefs: CalendarPreferences
     var onAction: (TimerControl) -> Void = { _ in }
 
     var body: some View {
@@ -26,7 +28,8 @@ struct MainWindowView: View {
             switch state.page {
             case .timer: TimerPageView(engine: engine, settings: settings, onAction: onAction)
             case .stats: StatsView(model: statsModel)
-            case .settings: SettingsView(settings: settings, state: state)
+            case .settings:
+                SettingsView(settings: settings, state: state, calendarModel: calendarModel, calendarPrefs: calendarPrefs)
             }
         }
         .frame(minWidth: 640, minHeight: 480)

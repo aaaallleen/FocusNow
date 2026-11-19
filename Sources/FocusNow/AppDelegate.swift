@@ -11,8 +11,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var alerter: FinishAlerter!
     private(set) var statsModel: StatsViewModel!
     private(set) var windows: WindowCoordinator!
+    private(set) var calendarPrefs: CalendarPreferences!
+    private(set) var calendarSource: CalendarSource!
+    private(set) var calendarModel: CalendarModel!
     let mainState = MainWindowState()
     private var driver: TimerDriver!
+    private var calendarTimer: Timer?
     private var launchedAsLoginItem = false
     var launchedAsLoginItemForCheck: Bool { launchedAsLoginItem }
 
@@ -36,6 +40,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings: { settings.settings }, sessions: sessions,
             snapshots: FileSnapshotStore(url: dataDir.appendingPathComponent("engine-snapshot.json")),
             clock: clock, calendar: calendar)
+
+        // The self-check never touches EventKit: it reads made-up events.
+        let calendarPrefs = CalendarPreferences(defaults: Self.defaults())
+        self.calendarPrefs = calendarPrefs
+        let calendarSource: CalendarSource = DebugSnapshots.directory != nil
+            ? FakeCalendarSource() : EventKitCalendarSource()
+        self.calendarSource = calendarSource
+        let calendarModel = CalendarModel(
+            source: calendarSource, preferences: calendarPrefs, clock: clock, calendar: calendar)
+        self.calendarModel = calendarModel
+        refreshCalendarAsEventsPass()
 
         // A one-off length belongs to the Focus default it was set against.
         settings.onFocusMinutesChange = { [weak engine] in engine?.focusDefaultChanged() }
@@ -66,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             makeMain: { [weak self] in
                 AnyView(MainWindowView(
                     state: mainState, engine: engine, settings: settings, statsModel: statsModel,
+                    calendarModel: calendarModel, calendarPrefs: calendarPrefs,
                     onAction: { control in self?.windowTimerWasUsed(control) }))
             },
             savesWindowPlace: Self.testDataDir == nil)
@@ -75,7 +91,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: .NSCalendarDayChanged, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.statsModel.reload() }
+            MainActor.assumeIsolated {
+                self?.statsModel.reload()
+                self?.calendarModel.refresh()
+            }
+        }
+        // Back from System Settings, perhaps with calendar access changed.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.calendarModel.refresh() }
         }
 
         if !launchedAsLoginItem {
@@ -205,6 +230,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statsModel.reload()
         mainState.page = .stats
         windows.showMain()
+    }
+
+    /// The Timer page's "Show your calendar here" link.
+    func showCalendarSettings() {
+        mainState.settingsSection = .calendar
+        showSettings()
+    }
+
+    /// The Timer page's event list changes as events start and end; checking
+    /// every 15 s keeps it within a minute.
+    private func refreshCalendarAsEventsPass() {
+        let timer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.calendarModel.refreshIfDue() }
+        }
+        timer.tolerance = 3
+        RunLoop.main.add(timer, forMode: .common)
+        calendarTimer = timer
     }
 
     /// ⌘,, ⌘3 and the popover's Settings button: the main window's Settings page.

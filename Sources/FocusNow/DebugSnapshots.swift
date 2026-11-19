@@ -125,6 +125,15 @@ final class DebugSnapshots {
         return found
     }
 
+    /// Whether any element reads `text`: as its label, title or value (static
+    /// text exposes its words as its value).
+    func containsText(_ text: String, in window: NSWindow) -> Bool {
+        accessibilityElements(in: window).contains { element in
+            ["accessibilityLabel", "accessibilityTitle", "accessibilityValue"]
+                .contains { Self.attribute(element, $0) as? String == text }
+        }
+    }
+
     /// The screen frame of the element with this accessibility label, title or identifier.
     func accessibilityFrame(of label: String, in window: NSWindow) -> NSRect? {
         let element = accessibilityElements(in: window).first {
