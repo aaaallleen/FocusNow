@@ -11,6 +11,25 @@ extension TimerEngine {
     var phaseKey: String { "\(status)-\(displayedKind)-\(needsAttention)" }
 }
 
+/// The fields on one surface (the Timer page, or the popover) that hold typed
+/// text not yet applied. A control on that surface applies them before it acts,
+/// so typing a length and then clicking Start (or −/+) uses what was typed.
+@MainActor
+final class PendingEdits {
+    private var commits: [UUID: () -> Void] = [:]
+
+    func register(_ id: UUID, commit: @escaping () -> Void) { commits[id] = commit }
+    func unregister(_ id: UUID) { commits[id] = nil }
+
+    func commitAll() {
+        for commit in Array(commits.values) { commit() }
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var pendingEdits: PendingEdits? = nil
+}
+
 /// "FOCUS · 1 of 4", "BREAK", "LONG BREAK".
 struct PhaseLabel: View {
     let engine: TimerEngine
@@ -42,6 +61,8 @@ struct TimerRing: View {
     @State private var initialDraft = ""
     @State private var hovering = false
     @FocusState private var fieldFocused: Bool
+    @State private var editID = UUID()
+    @Environment(\.pendingEdits) private var pendingEdits
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
     private var tint: Color { Theme.color(for: engine.displayedKind) }
@@ -121,12 +142,14 @@ struct TimerRing: View {
         draft = "\(engine.plannedSecondsForNext / 60)"
         initialDraft = draft
         editing = true
+        pendingEdits?.register(editID) { finishEditing(apply: true) }
         onBeginEditing()
     }
 
     private func finishEditing(apply: Bool) {
         guard editing else { return }
         editing = false
+        pendingEdits?.unregister(editID)
         guard apply, draft != initialDraft,
               let minutes = LengthInput.minutes(draft, in: TimerSettings.minuteRange) else { return }
         engine.setNextFocus(minutes: minutes)
@@ -137,6 +160,8 @@ struct TimerRing: View {
 struct TimerControlsRow: View {
     let engine: TimerEngine
     var onAction: (TimerControl) -> Void = { _ in }
+
+    @Environment(\.pendingEdits) private var pendingEdits
 
     private var tint: Color { Theme.color(for: engine.displayedKind) }
 
@@ -155,11 +180,11 @@ struct TimerControlsRow: View {
 
     private var adjustButtons: some View {
         HStack(spacing: 4) {
-            Button { engine.adjustNextFocus(byMinutes: -TimerEngine.adjustStepMinutes) } label: {
+            Button { adjust(by: -TimerEngine.adjustStepMinutes) } label: {
                 Image(systemName: "minus")
             }
             .accessibilityLabel("Five minutes shorter")
-            Button { engine.adjustNextFocus(byMinutes: TimerEngine.adjustStepMinutes) } label: {
+            Button { adjust(by: TimerEngine.adjustStepMinutes) } label: {
                 Image(systemName: "plus")
             }
             .accessibilityLabel("Five minutes longer")
@@ -168,7 +193,13 @@ struct TimerControlsRow: View {
         .fixedSize()
     }
 
+    private func adjust(by minutes: Int) {
+        pendingEdits?.commitAll()
+        engine.adjustNextFocus(byMinutes: minutes)
+    }
+
     private func perform(_ control: TimerControl) {
+        pendingEdits?.commitAll()
         switch control {
         case .startFocus, .startBreak: engine.start()
         case .skipBreak, .skip: engine.skipBreak()

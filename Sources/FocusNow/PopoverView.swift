@@ -12,6 +12,8 @@ struct PopoverView: View {
     /// Typing into the digits needs the app active and the popover key.
     var onBeginEditing: () -> Void = {}
 
+    @State private var pendingEdits = PendingEdits()
+
     var body: some View {
         VStack(spacing: 14) {
             PhaseLabel(engine: engine)
@@ -24,6 +26,7 @@ struct PopoverView: View {
         .padding(16)
         .frame(width: 230)
         .animation(.easeInOut(duration: Theme.phaseFade), value: engine.phaseKey)
+        .environment(\.pendingEdits, pendingEdits)
     }
 
     private var footer: some View {

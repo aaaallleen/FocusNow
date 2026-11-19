@@ -131,8 +131,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openStats() { showStats() }
 
-    /// Starting from the window asks for notification permission, as the popover does.
+    /// Starting from the window asks for notification permission, as the popover
+    /// does, and answering a finish here closes the popover the finish opened.
     private func windowTimerWasUsed(_ control: TimerControl) {
+        statusItem.ownerRespondedElsewhere()
         if control == .startFocus || control == .startBreak, DebugSnapshots.directory == nil {
             alerter.requestAuthorizationIfNeeded()
         }
@@ -179,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onSettings: { [weak self] in self?.showSettings() },
             onQuit: { NSApp.terminate(nil) },
             onBeginEditing: { [weak self] in
+                self?.statusItem.popoverWasUsed()
                 NSApp.activate()
                 self?.statusItem.makePopoverKey()
             }))

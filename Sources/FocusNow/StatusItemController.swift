@@ -60,6 +60,12 @@ final class StatusItemController: NSObject {
         popoverWindow?.makeFirstResponder(nil)
     }
 
+    /// The owner answered a finish in the window: the popover the finish opened
+    /// has done its job (it wouldn't close on an outside click by itself).
+    func ownerRespondedElsewhere() {
+        if popover.behavior == .applicationDefined { closePopover() }
+    }
+
     /// After the owner interacts with a popover opened by a finish, it behaves
     /// like a clicked one again.
     func popoverWasUsed() {

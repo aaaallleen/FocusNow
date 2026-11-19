@@ -122,7 +122,8 @@ final class DebugSnapshots {
         while !queue.isEmpty, visited < 5000 {
             let element = queue.removeFirst()
             visited += 1
-            if value(element, "accessibilityLabel") as? String == label {
+            if value(element, "accessibilityLabel") as? String == label
+                || value(element, "accessibilityTitle") as? String == label {
                 frame = (value(element, "accessibilityFrame") as? NSValue)?.rectValue
                 break
             }
@@ -143,6 +144,31 @@ final class DebugSnapshots {
         }
         await wait(0.3)
         return true
+    }
+
+    /// Clicks the up (or down) arrow of stepper `index`, top to bottom.
+    func clickStepper(_ index: Int, up: Bool, in window: NSWindow) async {
+        func walk(_ view: NSView) -> [NSStepper] {
+            ((view as? NSStepper).map { [$0] } ?? []) + view.subviews.flatMap(walk)
+        }
+        let steppers = (window.contentView.map(walk) ?? []).sorted {
+            $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY
+        }
+        guard steppers.indices.contains(index) else {
+            note("no stepper \(index) (found \(steppers.count))")
+            return
+        }
+        let frame = steppers[index].convert(steppers[index].bounds, to: nil)
+        let point = NSPoint(x: frame.midX, y: up ? frame.maxY - frame.height / 4 : frame.minY + frame.height / 4)
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let event = NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                window.sendEvent(event)
+            }
+        }
+        await wait(0.3)
     }
 
     /// One key press: 36 is Return ("\r"), 53 is Escape ("\u{1b}").

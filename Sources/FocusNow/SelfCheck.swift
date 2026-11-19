@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "commits", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -17,6 +17,7 @@ extension AppDelegate {
         if phases.contains("settings") { await checkSettings(snap) }
         if phases.contains("timer") { await checkTimer(snap) }
         if phases.contains("digits") { await checkDigits(snap) }
+        if phases.contains("commits") { await checkCommits(snap) }
         if phases.contains("persist") {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
@@ -328,6 +329,90 @@ extension AppDelegate {
         snap.note("popover closed mid-edit → \(remaining())")
         engine.setNextFocus(minutes: 40)
         await snap.wait(1.0) // the popover reports itself shown for a moment after closing
+    }
+
+    /// What happens to half-typed values when something else is clicked, and
+    /// to the finish popover when the owner answers in the window.
+    func checkCommits(_ snap: DebugSnapshots) async {
+        snap.note("== commits ==")
+        engine.cancel()
+        engine.skipBreak()
+        engine.setNextFocus(minutes: 40)
+        showTimer()
+        await snap.wait(0.6)
+        guard let window = windows.mainWindow else {
+            snap.note("no main window")
+            return
+        }
+        func planned() -> Int { engine.active?.plannedSeconds ?? -1 }
+        func typeDigits(_ text: String) async {
+            guard await snap.press(accessibilityLabel: "Type the next session's length", in: window),
+                  window.firstResponder is NSText else {
+                snap.note("digits did not become a field")
+                return
+            }
+            await snap.typeIntoFocusedField(text, in: window)
+        }
+        func reset() async {
+            engine.cancel()
+            settings.settings.focusMinutes = 40
+            engine.setNextFocus(minutes: 40)
+            window.makeFirstResponder(nil)
+            await snap.wait(0.6)
+        }
+        func command(_ key: String, _ code: UInt16) async {
+            if let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: .command,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false, keyCode: code) {
+                _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
+            }
+            await snap.wait(0.4)
+        }
+
+        // Typing, then clicking a control on the same page: what was typed applies first.
+        await typeDigits("25")
+        _ = await snap.press(accessibilityLabel: "Start focus", in: window)
+        snap.note("digits 25 then Start → planned=\(planned())")
+        await reset()
+        await snap.type("25", intoField: 0, of: window)
+        _ = await snap.press(accessibilityLabel: "Start focus", in: window)
+        snap.note("focus field 25 then Start → planned=\(planned()) focus=\(settings.settings.focusMinutes)")
+        await reset()
+        await typeDigits("25")
+        _ = await snap.press(accessibilityLabel: "Five minutes longer", in: window)
+        snap.note("digits 25 then + → remaining=\(engine.remainingSeconds)")
+        await reset()
+
+        await snap.type("25", intoField: 0, of: window)
+        await snap.clickStepper(0, up: true, in: window)
+        window.makeFirstResponder(nil)
+        await snap.wait(0.3)
+        snap.note("focus field 25 then stepper up → focus=\(settings.settings.focusMinutes)")
+        await reset()
+
+        // The configuration going away mid-edit keeps what was typed.
+        await snap.type("30", intoField: 0, of: window)
+        engine.start() // as the popover's Start does
+        await snap.wait(0.6)
+        snap.note("focus field 30 then popover Start → focus=\(settings.settings.focusMinutes) planned=\(planned())")
+        await reset()
+        await snap.type("35", intoField: 0, of: window)
+        await command("2", 19)
+        snap.note("focus field 35 then ⌘2 → focus=\(settings.settings.focusMinutes) page=\(mainState.page)")
+        await command("1", 18)
+        await reset()
+
+        // A finish opens the popover; answering in the window closes it.
+        engine.nextFocusSecondsOverride = 2
+        engine.start()
+        await snap.wait(3.0)
+        snap.note("finished: popoverVisible=\(statusItem.popoverWindowVisible) behavior=\(statusItem.popoverBehavior.rawValue)")
+        _ = await snap.press(accessibilityLabel: "Start break", in: window)
+        await snap.wait(0.6)
+        snap.note("Start break in window → popoverVisible=\(statusItem.popoverWindowVisible) status=\(engine.status) phase=\"\(engine.phaseLabel)\"")
+        engine.skipBreak()
+        await snap.wait(1.0)
     }
 
     private func closeAllWindows() {

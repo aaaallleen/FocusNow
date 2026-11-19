@@ -53,6 +53,16 @@ struct LengthInputTests {
         }
     }
 
+    @Test func fullWidthAndOtherScriptDigitsReadAsNumbers() {
+        #expect(LengthInput.minutes("２５", in: 1...180) == 25)
+        #expect(LengthInput.minutes("٢٥", in: 1...180) == 25)
+        #expect(LengthInput.minutes("２５ｍｉｎ", in: 1...180) == 25)
+        #expect(LengthInput.sessions("４", in: 1...12) == 4)
+        #expect(LengthInput.goalSeconds("３ｈ") == 10_800)
+        #expect(LengthInput.goalSeconds("３：３０") == 12_600)
+        #expect(LengthInput.goalSeconds("١.٥") == 5_400)
+    }
+
     @Test func goalRejectsEverythingElse() {
         for text in ["", "abc", "h", "3:75", "-2h", "4 sessions", "3:"] {
             #expect(LengthInput.goalSeconds(text) == nil, "\(text)")

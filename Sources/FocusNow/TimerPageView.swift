@@ -10,6 +10,7 @@ struct TimerPageView: View {
     var onAction: (TimerControl) -> Void = { _ in }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pendingEdits = PendingEdits()
 
     /// The timer's share of the width while the configuration shows.
     static let timerShare: CGFloat = 0.62
@@ -23,6 +24,7 @@ struct TimerPageView: View {
         }
         .animation(reduceMotion ? .easeInOut(duration: Theme.phaseFade) : Theme.layoutShift,
                    value: engine.isInSession)
+        .environment(\.pendingEdits, pendingEdits)
     }
 
     private func layout(in size: CGSize, inSession: Bool) -> some View {
@@ -67,39 +69,58 @@ struct TimerPageView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.8)
                 .foregroundStyle(.secondary)
-            minutesRow("Focus", $settings.settings.focusMinutes)
-            minutesRow("Short break", $settings.settings.shortBreakMinutes)
-            minutesRow("Long break", $settings.settings.longBreakMinutes)
-            let after = settings.settings.sessionsBeforeLongBreak
-            row("Long break after", LengthField(
-                value: $settings.settings.sessionsBeforeLongBreak, range: TimerSettings.sessionsRange,
-                step: 1, unit: after == 1 ? "session" : "sessions",
-                parse: { LengthInput.sessions($0, in: TimerSettings.sessionsRange) },
-                format: { "\($0)" }))
+            // One layout for every row: an aligned grid when it fits, all rows
+            // stacked (label above field) when the window is narrow.
+            ViewThatFits(in: .horizontal) {
+                Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
+                    ForEach(rows) { row in
+                        GridRow {
+                            Text(row.label).fixedSize()
+                            row.field.fixedSize().gridColumnAlignment(.trailing)
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(rows) { row in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(row.label)
+                            row.field.fixedSize()
+                        }
+                    }
+                }
+            }
         }
-        .padding(24)
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func minutesRow(_ label: String, _ value: Binding<Int>) -> some View {
-        row(label, LengthField(
-            value: value, range: TimerSettings.minuteRange, step: 1, unit: "min",
-            parse: { LengthInput.minutes($0, in: TimerSettings.minuteRange) },
-            format: { "\($0)" }))
+    private struct ConfigRow: Identifiable {
+        let label: String
+        let field: LengthField
+        var id: String { label }
     }
 
-    /// Label and field on one line when there's room, stacked when the window is narrow.
-    private func row(_ label: String, _ field: LengthField) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack {
-                Text(label).fixedSize()
-                Spacer(minLength: 12)
-                field.fixedSize()
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(label)
-                field.fixedSize()
-            }
-        }
+    private var rows: [ConfigRow] {
+        let after = settings.settings.sessionsBeforeLongBreak
+        return [
+            minutesRow("Focus", $settings.settings.focusMinutes),
+            minutesRow("Short break", $settings.settings.shortBreakMinutes),
+            minutesRow("Long break", $settings.settings.longBreakMinutes),
+            ConfigRow(label: "Long break after", field: LengthField(
+                value: $settings.settings.sessionsBeforeLongBreak, range: TimerSettings.sessionsRange,
+                step: 1, unit: after == 1 ? "session" : "sessions",
+                parse: { LengthInput.sessions($0, in: TimerSettings.sessionsRange) },
+                format: { "\($0)" }, fieldWidth: Self.fieldWidth, unitWidth: Self.unitWidth)),
+        ]
+    }
+
+    private static let fieldWidth: CGFloat = 44
+    private static let unitWidth: CGFloat = 54
+
+    private func minutesRow(_ label: String, _ value: Binding<Int>) -> ConfigRow {
+        ConfigRow(label: label, field: LengthField(
+            value: value, range: TimerSettings.minuteRange, step: 1, unit: "min",
+            parse: { LengthInput.minutes($0, in: TimerSettings.minuteRange) },
+            format: { "\($0)" }, fieldWidth: Self.fieldWidth, unitWidth: Self.unitWidth))
     }
 }

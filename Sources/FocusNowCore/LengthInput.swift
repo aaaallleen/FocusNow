@@ -27,8 +27,17 @@ public enum LengthInput {
 
     // MARK: - Private
 
+    /// Full-width forms ("２５ｍ", "３：３０", typed in a CJK input mode) become
+    /// half-width, and other scripts' digits ("٢٥") become ASCII, so `Int` and
+    /// `Double` can read every digit the patterns match.
     private static func normalized(_ text: String) -> String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let halfWidth = text.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? text
+        let ascii = String(halfWidth.map { character -> Character in
+            guard character.isWholeNumber, let digit = character.wholeNumberValue,
+                  (0...9).contains(digit) else { return character }
+            return Character(String(digit))
+        })
+        return ascii.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     /// A run of digits as an Int; one too long for Int reads as Int.max (and then clamps).
