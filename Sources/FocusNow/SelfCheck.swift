@@ -24,8 +24,9 @@ extension AppDelegate {
                 "idleRemaining=\(engine.remainingSeconds) goalHistory=\(settings.goalHistory.count) " +
                 "loginItemStatus=\(SMAppService.mainApp.status.rawValue)")
         }
-        if phases.contains("popover") { await checkPopover(snap) }
         if phases.contains("outside") { await checkOutside(snap) }
+        // Last: it quits with a session running, for the persist phase's relaunch.
+        if phases.contains("popover") { await checkPopover(snap) }
         snap.finish()
     }
 
@@ -33,6 +34,8 @@ extension AppDelegate {
     /// make the app active (it usually does when another app is in use).
     func checkOutside(_ snap: DebugSnapshots) async {
         snap.note("== outside ==")
+        engine.cancel()
+        engine.skipBreak() // idle with a focus next, so the digits can be typed into
         windows.showMain()
         await snap.wait(0.4)
         func visible() -> Bool { statusItem.popoverWindowVisible }
@@ -73,6 +76,46 @@ extension AppDelegate {
         statusItem.clicked(); await snap.wait(0.9)
         snap.note("clicked again right after closing: visible=\(visible()) (want true)")
         statusItem.closePopover(); await snap.wait(0.6)
+
+        // A click on the menu bar item toggles it closed through the item alone;
+        // were the click also counted as outside, the popover would reopen.
+        statusItem.clicked(); await snap.wait(0.5)
+        if let itemWindow = statusItem.button?.window, let button = statusItem.button {
+            let center = button.convert(NSPoint(x: button.bounds.midX, y: button.bounds.midY), to: nil)
+            await snap.postClick(at: center, in: itemWindow)
+        }
+        await snap.wait(0.8)
+        snap.note("click-opened, click on the item: visible=\(visible()) (want false)")
+        statusItem.closePopover(); await snap.wait(0.6)
+
+        // Escape closes a clicked-open popover, but while typing it only drops the edit.
+        statusItem.clicked(); await snap.wait(0.5)
+        if let popover = statusItem.popoverWindow {
+            _ = await snap.press(accessibilityLabel: TimerRing.digitsIdentifier, in: popover)
+            await snap.postKey(53, characters: "\u{1b}", in: popover)
+            snap.note("escape while typing: visible=\(visible()) editing=\(popover.firstResponder is NSText) (want true false)")
+            await snap.postKey(53, characters: "\u{1b}", in: popover)
+            snap.note("escape: visible=\(visible()) (want false)")
+        }
+        statusItem.closePopover(); await snap.wait(0.6)
+        statusItem.showPopover(fromClick: false); await snap.wait(0.5)
+        if let popover = statusItem.popoverWindow {
+            await snap.postKey(53, characters: "\u{1b}", in: popover)
+        }
+        snap.note("finish-opened, escape: visible=\(visible()) (want true)")
+        statusItem.closePopover(); await snap.wait(0.6)
+
+        // −/+ in a popover a finish opened count as using it, like Start does.
+        engine.cancel()
+        engine.skipBreak()
+        statusItem.showPopover(fromClick: false); await snap.wait(0.5)
+        if let popover = statusItem.popoverWindow {
+            _ = await snap.press(accessibilityLabel: "Five minutes shorter", in: popover)
+        }
+        await anotherAppComesForward()
+        snap.note("finish-opened, then − pressed, another app forward: visible=\(visible()) (want false)")
+        statusItem.closePopover(); await snap.wait(0.6)
+        engine.setNextFocus(minutes: 40)
     }
 
     var policyName: String {
@@ -187,6 +230,10 @@ extension AppDelegate {
             await snap.type("abc", intoField: 0, of: window)
             await snap.pressKey(36, characters: "\r", in: window)
             snap.note("typed abc → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
+            await snap.type("", intoField: 0, of: window)
+            await snap.pressKey(51, characters: "\u{7f}", in: window) // Delete
+            await snap.pressKey(36, characters: "\r", in: window)
+            snap.note("cleared → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
             await snap.type("5h", intoField: 0, of: window)
             await snap.pressKey(53, characters: "\u{1b}", in: window)
             snap.note("escape → \(goal())")
@@ -354,6 +401,11 @@ extension AppDelegate {
         snap.note("digits 45:00 → \(remaining()) (want 2700)")
         if await edit("25:30", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
         snap.note("digits 25:30 → \(remaining()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 2)")
+        if await edit("", in: window) {
+            await snap.pressKey(51, characters: "\u{7f}", in: window) // Delete
+            await snap.pressKey(ret.0, characters: ret.1, in: window)
+        }
+        snap.note("digits cleared → \(remaining()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 2)")
         engine.setNextFocus(minutes: 25)
         if await edit("50", in: window) { await snap.pressKey(esc.0, characters: esc.1, in: window) }
         snap.note("digits escape → \(remaining())")

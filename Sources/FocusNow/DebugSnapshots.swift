@@ -179,6 +179,20 @@ final class DebugSnapshots {
         await wait(0.6)
     }
 
+    /// One key press through the app's event queue, so event monitors see it.
+    func postKey(_ keyCode: UInt16, characters: String, in window: NSWindow) async {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            if let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: keyCode) {
+                NSApp.postEvent(event, atStart: false)
+            }
+        }
+        await wait(0.6)
+    }
+
     /// Clicks the up (or down) arrow of stepper `index`, top to bottom.
     func clickStepper(_ index: Int, up: Bool, in window: NSWindow) async {
         func walk(_ view: NSView) -> [NSStepper] {

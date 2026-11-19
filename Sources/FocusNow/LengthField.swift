@@ -3,11 +3,12 @@ import SwiftUI
 /// A number you can type or step: a text field, an optional unit, and a stepper.
 ///
 /// Typed text commits on Return or when the field loses focus. Text that
-/// `parse` can't read beeps and puts the previous value back; Escape puts it
-/// back quietly. `parse` clamps, so out-of-range numbers land on the nearest
-/// allowed value.
+/// `parse` can't read beeps and puts the previous value back; Escape, or
+/// clearing the field, puts it back quietly. `parse` clamps, so out-of-range
+/// numbers land on the nearest allowed value.
 struct LengthField: View {
-    /// What VoiceOver calls the field and its arrows ("Focus", "Daily focus goal").
+    /// What VoiceOver calls the field and its arrows, unit included, since the
+    /// field reads only the number ("Focus, in minutes", "Daily focus goal").
     let label: String
     @Binding var value: Int
     let range: ClosedRange<Int>
@@ -95,7 +96,7 @@ struct LengthField: View {
     }
 
     private func commit() {
-        if text != format(value) {
+        if text != format(value), !InputFeedback.isBlank(text) {
             if let parsed = parse(text) { value = parsed } else { InputFeedback.rejected() }
         }
         text = format(value)

@@ -41,6 +41,11 @@ enum InputFeedback {
         rejections += 1
         if DebugSnapshots.directory == nil { NSSound.beep() }
     }
+
+    /// Cleared text isn't a mistake to beep at; the field just keeps its value.
+    nonisolated static func isBlank(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 }
 
 /// Shows `cursor` over the area it backs. AppKit's cursor rects put the arrow
@@ -181,8 +186,9 @@ struct TimerRing: View {
         guard editing else { return }
         editing = false
         pendingEdits?.unregister(editID)
-        guard apply, draft != initialDraft else { return }
-        guard let minutes = LengthInput.minutes(draft, in: TimerSettings.minuteRange) else {
+        // Cleared means never mind: the length stays, quietly.
+        guard apply, draft != initialDraft, !InputFeedback.isBlank(draft) else { return }
+        guard let minutes = LengthInput.timerDigits(draft, in: TimerSettings.minuteRange) else {
             InputFeedback.rejected()
             return
         }
@@ -230,9 +236,11 @@ struct TimerControlsRow: View {
         .fixedSize()
     }
 
+    /// Counts as answering a finish, as Start does.
     private func adjust(by minutes: Int) {
         pendingEdits?.commitAll()
         engine.adjustNextFocus(byMinutes: minutes)
+        onAction(.adjustLength)
     }
 
     private func perform(_ control: TimerControl) {

@@ -107,7 +107,7 @@ struct TimerPageView: View {
             minutesRow("Short break", $settings.settings.shortBreakMinutes),
             minutesRow("Long break", $settings.settings.longBreakMinutes),
             ConfigRow(label: "Long break after", field: LengthField(
-                "Long break after", value: $settings.settings.sessionsBeforeLongBreak, range: TimerSettings.sessionsRange,
+                "Long break after, in sessions", value: $settings.settings.sessionsBeforeLongBreak, range: TimerSettings.sessionsRange,
                 step: 1, unit: after == 1 ? "session" : "sessions",
                 parse: { LengthInput.sessions($0, in: TimerSettings.sessionsRange) },
                 format: { "\($0)" }, fieldWidth: Self.fieldWidth, unitWidth: Self.unitWidth)),
@@ -119,7 +119,7 @@ struct TimerPageView: View {
 
     private func minutesRow(_ label: String, _ value: Binding<Int>) -> ConfigRow {
         ConfigRow(label: label, field: LengthField(
-            label, value: value, range: TimerSettings.minuteRange, step: 1, unit: "min",
+            "\(label), in minutes", value: value, range: TimerSettings.minuteRange, step: 1, unit: "min",
             parse: { LengthInput.minutes($0, in: TimerSettings.minuteRange) },
             format: { "\($0)" }, fieldWidth: Self.fieldWidth, unitWidth: Self.unitWidth))
     }

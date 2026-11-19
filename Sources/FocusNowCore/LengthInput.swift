@@ -4,13 +4,18 @@ import Foundation
 /// clamps a number to its range and returns nil for text it can't read, so the
 /// field can put its previous value back.
 public enum LengthInput {
-    /// "25", "25m", "25 min", "25 minutes", "1 minute": whole minutes only. Also
-    /// the clock form the timer shows, "25:00" or "1:30:00", when its seconds are zero.
+    /// "25", "25m", "25 min", "25 minutes", "1 minute": whole minutes only.
+    /// (Not "1:00": in a field labelled "min" that could mean an hour.)
     public static func minutes(_ text: String, in range: ClosedRange<Int>) -> Int? {
+        guard let match = normalized(text).wholeMatch(of: #/(\d+)\s*(?:m|mins?|minutes?)?/#) else { return nil }
+        return whole(match.1).clamped(to: range)
+    }
+
+    /// What the timer's digits take: whole minutes, or the clock form they show,
+    /// "25:00" or "1:30:00", when its seconds are zero.
+    public static func timerDigits(_ text: String, in range: ClosedRange<Int>) -> Int? {
+        if let minutes = minutes(text, in: range) { return minutes }
         let text = normalized(text)
-        if let match = text.wholeMatch(of: #/(\d+)\s*(?:m|mins?|minutes?)?/#) {
-            return whole(match.1).clamped(to: range)
-        }
         if let match = text.wholeMatch(of: #/(\d+):00/#) {
             return whole(match.1).clamped(to: range)
         }

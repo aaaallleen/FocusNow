@@ -59,6 +59,7 @@ final class StatusItemController: NSObject {
     func showPopover(fromClick: Bool) {
         guard let button = item.button else { return }
         closesOnOutsideClick = fromClick
+        recoverFromAMissedClose()
         if isClosing {
             reopenWhenClosed = true
             return
@@ -71,8 +72,8 @@ final class StatusItemController: NSObject {
 
     func closePopover() {
         reopenWhenClosed = false
-        guard popover.isShown, !isClosing else { return }
         stopWatchingOutside()
+        guard popover.isShown, !isClosing else { return }
         endEditing()
         popover.close()
     }
@@ -94,8 +95,15 @@ final class StatusItemController: NSObject {
         closesOnOutsideClick = true
     }
 
+    /// Should AppKit ever skip `popoverDidClose`, a popover that's gone mustn't
+    /// leave every later click waiting for a close that never finishes.
+    private func recoverFromAMissedClose() {
+        if isClosing && !popover.isShown { isClosing = false }
+    }
+
     @objc func clicked() {
         engine.acknowledge()
+        recoverFromAMissedClose()
         if popover.isShown && !isClosing {
             closePopover()
         } else {
@@ -106,8 +114,8 @@ final class StatusItemController: NSObject {
     // MARK: - Closing on outside clicks
 
     /// A click in another app, on the desktop or in the menu bar; a click in one
-    /// of this app's windows other than the popover; or another app coming
-    /// forward (⌘-Tab) closes a popover that closes on outside clicks.
+    /// of this app's windows other than the popover; another app coming forward
+    /// (⌘-Tab); or Escape closes a popover that closes on outside clicks.
     private func watchOutside() {
         guard outsideMonitors.isEmpty else { return }
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -118,14 +126,28 @@ final class StatusItemController: NSObject {
         }
         if let local = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
             MainActor.assumeIsolated {
-                // The item's own clicks toggle the popover through `clicked()`.
                 guard let self, event.window !== self.popoverWindow,
-                      event.window !== self.item.button?.window else { return }
+                      !self.isMenuBarItemWindow(event.window) else { return }
                 self.interactionOutside()
             }
             return event
         }) {
             outsideMonitors.append(local)
+        }
+        // `.applicationDefined` leaves Escape to the app. While typing into the
+        // digits, Escape belongs to the field (it drops the edit).
+        if let escape = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            let isEscape = event.keyCode == 53
+            let window = event.window
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                guard let self, isEscape, let popover = self.popoverWindow, window === popover,
+                      self.closesOnOutsideClick, !(popover.firstResponder is NSText) else { return false }
+                self.closePopover()
+                return true
+            }
+            return handled ? nil : event
+        }) {
+            outsideMonitors.append(escape)
         }
         let ownPID = ProcessInfo.processInfo.processIdentifier
         appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -142,6 +164,14 @@ final class StatusItemController: NSObject {
         outsideMonitors.removeAll()
         if let appSwitchObserver { NSWorkspace.shared.notificationCenter.removeObserver(appSwitchObserver) }
         appSwitchObserver = nil
+    }
+
+    /// The item's own clicks toggle the popover through `clicked()`. With more
+    /// than one display each menu bar shows the item, so any status bar window
+    /// of this app counts as the item's.
+    private func isMenuBarItemWindow(_ window: NSWindow?) -> Bool {
+        guard let window else { return false }
+        return window === item.button?.window || window.level == .statusBar
     }
 
     private func interactionOutside() {
