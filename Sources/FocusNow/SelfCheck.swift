@@ -8,13 +8,14 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "popover"]
         await snap.wait(0.5)
-        snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) statsVisible=\(windows.isStatsVisible) " +
+        snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
             "iconFile=\(Bundle.main.url(forResource: "AppIcon", withExtension: "icns") != nil)")
         if phases.contains("stats") { await checkStats(snap) }
         if phases.contains("settings") { await checkSettings(snap) }
+        if phases.contains("timer") { await checkTimer(snap) }
         if phases.contains("persist") {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
@@ -35,7 +36,7 @@ extension AppDelegate {
 
     func checkStats(_ snap: DebugSnapshots) async {
         snap.note("== stats ==")
-        snap.note("launch: policy=\(policyName) statsVisible=\(windows.isStatsVisible) loginItem=\(launchedAsLoginItemForCheck)")
+        snap.note("launch: policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) loginItem=\(launchedAsLoginItemForCheck)")
         seedHistory()
         statsModel.reload()
         func tiles() -> String {
@@ -56,9 +57,9 @@ extension AppDelegate {
         let tuesday = statsModel.buckets[1].id
         statsModel.selectedBucketID = tuesday
         snap.render(view(), as: "stats-week-selected")
-        windows.showStats()
+        showStats()
         await snap.wait(0.5)
-        if let content = NSApp.windows.first(where: { $0.title == "Focus Stats" })?.contentView {
+        if let content = windows.mainWindow?.contentView {
             snap.capture(content, as: "stats-window-live", scale: 1)
         }
         snap.note("selected Tuesday: listed=\(statsModel.listedSessions.count) listInterval=\(statsModel.listInterval.start)")
@@ -71,12 +72,13 @@ extension AppDelegate {
         // Closing the last window hides the Dock icon; the app stays in the menu bar.
         closeAllWindows()
         await snap.wait(0.5)
-        snap.note("after close: policy=\(policyName) statsVisible=\(windows.isStatsVisible) running=true")
+        snap.note("after close: policy=\(policyName) mainVisible=\(windows.isMainVisible) running=true")
 
-        // Launching again from outside (as Spotlight does) brings Stats back.
+        // Launching again from outside (as Spotlight does) brings the window back on the Timer page.
+        mainState.page = .stats
         try? "ready".write(to: snap.directory.appendingPathComponent("ready-for-reopen"), atomically: true, encoding: .utf8)
-        for _ in 0..<40 where !windows.isStatsVisible { await snap.wait(0.25) }
-        snap.note("after external launch: policy=\(policyName) statsVisible=\(windows.isStatsVisible)")
+        for _ in 0..<40 where !windows.isMainVisible { await snap.wait(0.25) }
+        snap.note("after external launch: policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page)")
         closeAllWindows()
         await snap.wait(0.5)
 
@@ -85,7 +87,7 @@ extension AppDelegate {
         await snap.wait(0.3)
         showStats()
         await snap.wait(0.3)
-        snap.note("popover Stats: popoverVisible=\(statusItem.popoverWindowVisible) statsVisible=\(windows.isStatsVisible) policy=\(policyName)")
+        snap.note("popover Stats: popoverVisible=\(statusItem.popoverWindowVisible) mainVisible=\(windows.isMainVisible) page=\(mainState.page) policy=\(policyName)")
 
         // A session saved while the window is open shows up in it.
         let before = statsModel.tiles[.day]?.sessionCount ?? -1
@@ -164,6 +166,97 @@ extension AppDelegate {
         closeAllWindows()
         await snap.wait(0.4)
         snap.note("after closing Settings: policy=\(policyName)")
+    }
+
+    func checkTimer(_ snap: DebugSnapshots) async {
+        snap.note("== timer ==")
+        engine.cancel()
+        engine.skipBreak() // earlier phases may have left a break pending
+        closeAllWindows()
+        await snap.wait(0.4)
+        showTimer()
+        await snap.wait(0.6)
+        guard let window = windows.mainWindow, let frameView = window.contentView?.superview else {
+            snap.note("no main window")
+            return
+        }
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.4)
+        func fields() -> Int { snap.textFields(in: window).count }
+        func shot(_ name: String) async {
+            await snap.wait(0.1)
+            snap.capture(frameView, as: name, scale: 1)
+        }
+        snap.note("launch page=\(mainState.page) mainVisible=\(windows.isMainVisible) fields=\(fields()) " +
+            "toolbarItems=\(window.toolbar?.items.count ?? 0) policy=\(policyName)")
+        window.appearance = NSAppearance(named: .aqua)
+        await shot("timer-idle")
+        window.appearance = NSAppearance(named: .darkAqua)
+        await shot("timer-idle-dark")
+        window.appearance = nil
+
+        // The configuration column edits the defaults for every session.
+        await snap.type("30", intoField: 0, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("focus field → settings=\(settings.settings.focusMinutes) remaining=\(engine.remainingSeconds)")
+        settings.settings.focusMinutes = 40
+        await snap.type("6 sessions", intoField: 3, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("after field → \(settings.settings.sessionsBeforeLongBreak) phase=\"\(engine.phaseLabel)\"")
+        // A change made elsewhere (the stepper, Settings) while a field still has
+        // focus must survive the field losing focus.
+        settings.settings.sessionsBeforeLongBreak = 4
+        await snap.wait(0.2)
+        window.makeFirstResponder(nil)
+        await snap.wait(0.3)
+        snap.note("defaults kept after blur: focus=\(settings.settings.focusMinutes) after=\(settings.settings.sessionsBeforeLongBreak)")
+
+        // A session hides the configuration; the timer fills the window.
+        engine.start()
+        await snap.wait(0.6)
+        snap.note("running fields=\(fields()) inSession=\(engine.isInSession)")
+        await shot("timer-running")
+        engine.pause()
+        await snap.wait(0.4)
+        snap.note("paused fields=\(fields())")
+        await shot("timer-paused")
+        engine.cancel()
+        await snap.wait(0.6)
+        snap.note("after cancel fields=\(fields())")
+        await shot("timer-after-cancel")
+
+        // ⌘2 and ⌘1 through the real menu.
+        for (key, code) in [("2", UInt16(19)), ("1", UInt16(18))] {
+            if let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: .command,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false, keyCode: code) {
+                let handled = NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
+                await snap.wait(0.4)
+                snap.note("⌘\(key) handled=\(handled) page=\(mainState.page)")
+                if key == "2" { await shot("stats-page") }
+            }
+        }
+
+        // Window extremes.
+        window.setContentSize(NSSize(width: 640, height: 480))
+        await snap.wait(0.5)
+        snap.note("min size fields=\(fields()) content=\(window.contentView?.bounds.size ?? .zero)")
+        await shot("timer-idle-min")
+        engine.start()
+        await snap.wait(0.6)
+        await shot("timer-running-min")
+        engine.cancel()
+        window.setContentSize(NSSize(width: 1400, height: 900))
+        await snap.wait(0.4)
+        engine.setNextFocus(minutes: 180)
+        engine.start()
+        await snap.wait(0.6)
+        snap.note("large content=\(window.contentView?.bounds.size ?? .zero) remaining=\(TimeFormat.clock(engine.remainingSeconds))")
+        await shot("timer-running-large")
+        engine.cancel()
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.4)
     }
 
     private func closeAllWindows() {

@@ -11,12 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var alerter: FinishAlerter!
     private(set) var statsModel: StatsViewModel!
     private(set) var windows: WindowCoordinator!
+    let mainState = MainWindowState()
     private var driver: TimerDriver!
     private var launchedAsLoginItem = false
     var launchedAsLoginItemForCheck: Bool { launchedAsLoginItem }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // A login-item launch starts quietly in the menu bar; any other launch opens Stats.
+        // A login-item launch starts quietly in the menu bar; any other launch opens the Timer page.
         if let event = NSAppleEventManager.shared().currentAppleEvent, event.eventID == kAEOpenApplication {
             launchedAsLoginItem =
                 event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
@@ -56,8 +57,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let statsModel = StatsViewModel(
             sessions: sessions, goal: { settings.goal(on: $0) }, clock: clock, calendar: calendar)
         self.statsModel = statsModel
+        let mainState = self.mainState
+        let engine = self.engine!
         windows = WindowCoordinator(
-            makeStats: { AnyView(StatsView(model: statsModel)) },
+            makeMain: { [weak self] in
+                AnyView(MainWindowView(
+                    state: mainState, engine: engine, settings: settings, statsModel: statsModel,
+                    onAction: { control in self?.windowTimerWasUsed(control) }))
+            },
             makeSettings: { AnyView(SettingsView(settings: settings)) })
         NSApp.mainMenu = makeMainMenu()
         reloadStatsWhenSessionsChange()
@@ -69,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if !launchedAsLoginItem {
-            showStats()
+            showTimer()
         }
 
         if let dir = DebugSnapshots.directory {
@@ -78,9 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Spotlight, Launchpad or Finder while already running: bring Stats back.
+    /// Spotlight, Launchpad or Finder while already running: bring the Timer page back.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showStats()
+        showTimer()
         return true
     }
 
@@ -107,7 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        let statsItem = windowMenu.addItem(withTitle: "Focus Stats", action: #selector(openStats), keyEquivalent: "")
+        windowMenu.addItem(.separator())
+        let timerItem = windowMenu.addItem(withTitle: "Timer", action: #selector(openTimer), keyEquivalent: "1")
+        timerItem.target = self
+        let statsItem = windowMenu.addItem(withTitle: "Stats", action: #selector(openStats), keyEquivalent: "2")
         statsItem.target = self
         main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windowMenu
         NSApp.windowsMenu = windowMenu
@@ -117,7 +127,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() { showSettings() }
 
+    @objc private func openTimer() { showTimer() }
+
     @objc private func openStats() { showStats() }
+
+    /// Starting from the window asks for notification permission, as the popover does.
+    private func windowTimerWasUsed(_ control: TimerControl) {
+        if control == .startFocus || control == .startBreak, DebugSnapshots.directory == nil {
+            alerter.requestAuthorizationIfNeeded()
+        }
+    }
 
     /// A changed goal changes the stats (the goal line and today's tile).
     private func reloadStatsWhenSettingsChange() {
@@ -163,10 +182,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }
 
+    func showTimer() {
+        statusItem.closePopover()
+        mainState.page = .timer
+        windows.showMain()
+    }
+
     func showStats() {
         statusItem.closePopover()
         statsModel.reload()
-        windows.showStats()
+        mainState.page = .stats
+        windows.showMain()
     }
 
     func showSettings() {

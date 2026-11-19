@@ -47,8 +47,10 @@ struct LengthField: View {
                 .labelsHidden()
         }
         .onAppear { text = format(value) }
-        .onChange(of: value) { _, new in
-            if !focused { text = format(new) }
+        .onChange(of: value) { old, new in
+            // Follow changes made elsewhere (the stepper, another window) unless
+            // the field holds typed text that hasn't been committed yet.
+            if !focused || text == format(old) { text = format(new) }
         }
         .onChange(of: focused) { _, isFocused in
             if !isFocused { commit() }
@@ -56,7 +58,7 @@ struct LengthField: View {
     }
 
     private func commit() {
-        if let parsed = parse(text) { value = parsed }
+        if text != format(value), let parsed = parse(text) { value = parsed }
         text = format(value)
     }
 

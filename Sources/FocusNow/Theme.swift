@@ -25,6 +25,9 @@ enum Theme {
     static let pressScale: CGFloat = 0.97
     static let pressDuration: Double = 0.15
     static let phaseFade: Double = 0.2
+    /// The Timer page's configuration leaving or returning: on-screen movement,
+    /// so a strong ease-in-out.
+    static let layoutShift = Animation.timingCurve(0.77, 0, 0.175, 1, duration: 0.3)
 }
 
 extension NSAppearance {
