@@ -125,6 +125,18 @@ final class DebugSnapshots {
         return found
     }
 
+    /// Every element that reads something: its text (label, else title, else
+    /// value), its accessibility identifier, and its screen frame.
+    func readable(in window: NSWindow) -> [(text: String, identifier: String?, frame: NSRect)] {
+        accessibilityElements(in: window).compactMap { element in
+            let text = ["accessibilityLabel", "accessibilityTitle", "accessibilityValue"]
+                .compactMap { Self.attribute(element, $0) as? String }.first { !$0.isEmpty }
+            guard let text, let frame = (Self.attribute(element, "accessibilityFrame") as? NSValue)?.rectValue
+            else { return nil }
+            return (text, Self.attribute(element, "accessibilityIdentifier") as? String, frame)
+        }
+    }
+
     /// Whether any element reads `text`: as its label, title or value (static
     /// text exposes its words as its value).
     func containsText(_ text: String, in window: NSWindow) -> Bool {

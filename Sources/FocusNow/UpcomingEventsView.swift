@@ -1,0 +1,90 @@
+import FocusNowCore
+import SwiftUI
+
+/// Today's remaining events under the timer: "Now  Standup  until 10:30",
+/// then what's next, up to `rowLimit` rows and "+N more".
+struct UpcomingEventsView: View {
+    let model: CalendarModel
+    let rowLimit: Int
+    var onSetUp: () -> Void = {}
+
+    static let rowIdentifier = "upcoming-row"
+    private static let rowHeight: CGFloat = 18
+    private static let moreHeight: CGFloat = 16
+    private static let spacing: CGFloat = 4
+    /// The hairline above the list and the space under it.
+    private static let top: CGFloat = 9
+
+    /// The height the list takes for `lines` rows (or one line of message) and
+    /// maybe "+N more". The page reserves it so nothing overlaps the ring.
+    static func height(lines: Int, hasMore: Bool) -> CGFloat {
+        top + CGFloat(max(1, lines)) * (rowHeight + spacing) + (hasMore ? moreHeight + spacing : 0)
+    }
+
+    static func height(model: CalendarModel, rowLimit: Int) -> CGFloat {
+        guard model.access.canRead else { return height(lines: 1, hasMore: false) }
+        let list = model.upcoming.trimmed(to: rowLimit)
+        return height(lines: list.rows.count, hasMore: list.moreCount > 0)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Self.spacing) {
+            Divider().padding(.bottom, Self.spacing)
+            if !model.access.canRead {
+                Button("Show your calendar here", action: onSetUp)
+                    .buttonStyle(.link)
+                    .frame(height: Self.rowHeight)
+            } else {
+                let list = model.upcoming.trimmed(to: rowLimit)
+                if list.rows.isEmpty {
+                    Text("Nothing else on your calendar today")
+                        .foregroundStyle(.secondary)
+                        .frame(height: Self.rowHeight)
+                }
+                ForEach(list.rows, id: \.event.id) { row in
+                    EventRow(row: row).frame(height: Self.rowHeight)
+                }
+                if list.moreCount > 0 {
+                    Text("+\(list.moreCount) more")
+                        .foregroundStyle(.secondary)
+                        .frame(height: Self.moreHeight)
+                }
+            }
+        }
+        .font(.system(size: 12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct EventRow: View {
+    let row: UpcomingRow
+
+    private var title: String { row.event.title.isEmpty ? "No title" : row.event.title }
+    private var lead: String { row.isNow ? "Now" : Self.time(row.event.start) }
+    private var trail: String { (row.isNow ? "until " : "to ") + Self.time(row.event.end) }
+
+    /// The system's short time, which follows its 12/24-hour setting.
+    private static func time(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Circle().fill(Color(row.event.color)).frame(width: 7, height: 7)
+            Text(lead)
+                .fontWeight(row.isNow ? .semibold : .regular)
+                .foregroundStyle(row.isNow ? AnyShapeStyle(Theme.focus) : AnyShapeStyle(.secondary))
+                .monospacedDigit()
+                .frame(width: 62, alignment: .leading)
+            Text(title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 8)
+            Text(trail)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .fixedSize()
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(lead), \(title), \(trail)")
+        .accessibilityIdentifier(UpcomingEventsView.rowIdentifier)
+    }
+}

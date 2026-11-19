@@ -26,7 +26,14 @@ struct MainWindowView: View {
     var body: some View {
         Group {
             switch state.page {
-            case .timer: TimerPageView(engine: engine, settings: settings, onAction: onAction)
+            case .timer:
+                TimerPageView(
+                    engine: engine, settings: settings, calendarModel: calendarModel, calendarPrefs: calendarPrefs,
+                    onAction: onAction,
+                    onShowCalendarSettings: {
+                        state.settingsSection = .calendar
+                        state.page = .settings
+                    })
             case .stats: StatsView(model: statsModel)
             case .settings:
                 SettingsView(settings: settings, state: state, calendarModel: calendarModel, calendarPrefs: calendarPrefs)

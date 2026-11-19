@@ -72,6 +72,100 @@ extension AppDelegate {
         await snap.wait(0.3)
         snap.note("restored: access=\(calendarModel.access) hidden=\(calendarPrefs.hiddenCalendarIDs.sorted()) " +
             "upcoming=\(calendarModel.upcoming.rows.count)+\(calendarModel.upcoming.moreCount)")
+
+        await checkTimerEvents(snap, fake: fake)
+    }
+
+    /// Today's events under the timer.
+    private func checkTimerEvents(_ snap: DebugSnapshots, fake: FakeCalendarSource) async {
+        showTimer()
+        await snap.wait(0.6)
+        guard let window = windows.mainWindow, let frameView = window.contentView?.superview else {
+            snap.note("no main window")
+            return
+        }
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.5)
+        func shot(_ name: String) async {
+            await snap.wait(0.2)
+            snap.capture(frameView, as: name, scale: 1)
+        }
+        func rows() -> [(text: String, identifier: String?, frame: NSRect)] {
+            snap.readable(in: window).filter { $0.identifier == UpcomingEventsView.rowIdentifier }
+        }
+        func shows(_ text: String) -> Bool { snap.containsText(text, in: window) }
+        func ring() -> CGFloat { snap.accessibilityFrame(of: TimerRing.digitsIdentifier, in: window)?.height ?? -1 }
+        let more = calendarModel.upcoming.moreCount
+
+        snap.note("timer events: rows=\(rows().count) first=\"\(rows().first?.text ?? "-")\" " +
+            "more=\(more) shown=\(shows("+\(more) more")) (want 3 \"Now, Standup, until …\" >0 true)")
+        window.appearance = NSAppearance(named: .aqua)
+        await shot("timer-events")
+        window.appearance = NSAppearance(named: .darkAqua)
+        await shot("timer-events-dark")
+        window.appearance = nil
+        for row in rows() { snap.note("voiceover row: \(row.text)") }
+
+        let heights = rows().map { Int($0.frame.height) }
+        snap.note("long title row heights=\(heights) (want all equal)")
+
+        calendarModel.setShown(false, calendarID: "work")
+        await snap.wait(0.3)
+        let workTitles = ["Standup", "Design review", "1:1"]
+        snap.note("hidden Work: rows=\(rows().map(\.text)) exclude work=" +
+            "\(!rows().contains { row in workTitles.contains { row.text.contains(", \($0),") } }) (want true)")
+        calendarModel.setShown(true, calendarID: "work")
+        await snap.wait(0.3)
+
+        let ringWith = ring()
+        calendarPrefs.showOnTimerPage = false
+        await snap.wait(0.4)
+        snap.note("switch off: rows=\(rows().count) link=\(shows("Show your calendar here")) " +
+            "ringBigger=\(ring() > ringWith) (\(Int(ringWith))→\(Int(ring()))) (want 0 false true)")
+        calendarPrefs.showOnTimerPage = true
+        await snap.wait(0.3)
+
+        let seeded = fake.eventList
+        fake.eventList = seeded.map { event in
+            var past = event
+            past.start = Date().addingTimeInterval(-7200)
+            past.end = Date().addingTimeInterval(-3600)
+            return past
+        }
+        fake.simulateChange()
+        await snap.wait(0.3)
+        snap.note("nothing left: rows=\(rows().count) text=\(shows("Nothing else on your calendar today")) (want 0 true)")
+        fake.eventList = seeded
+
+        fake.access = .notAsked
+        fake.simulateChange()
+        await snap.wait(0.3)
+        let link = shows("Show your calendar here")
+        _ = await snap.press(accessibilityLabel: "Show your calendar here", in: window)
+        await snap.wait(0.4)
+        snap.note("not granted: link=\(link) → page=\(mainState.page) section=\(mainState.settingsSection) " +
+            "(want true settings calendar)")
+        fake.access = .granted
+        fake.simulateChange()
+
+        // The smallest window: rows that fit, a ring of at least 120 pt, nothing overlapping.
+        showTimer()
+        await snap.wait(0.4)
+        window.setContentSize(NSSize(width: 640, height: 480))
+        await snap.wait(0.5)
+        let size = window.contentView?.bounds.size ?? .zero
+        let limit = TimerPageLayout.rows(for: size)
+        let diameter = TimerPageLayout.diameter(
+            for: size, eventsHeight: UpcomingEventsView.height(model: calendarModel, rowLimit: limit))
+        let today = snap.readable(in: window).first { $0.text.hasPrefix("Today ") }?.frame ?? .zero
+        let lowest = rows().map(\.frame).min { $0.minY < $1.minY } ?? .zero
+        let moreLine = snap.readable(in: window).first { $0.text.hasSuffix(" more") }?.frame
+        let bottom = min(lowest.minY, moreLine?.minY ?? .infinity)
+        snap.note("min size \(Int(size.width))×\(Int(size.height)): rows=\(rows().count) limit=\(limit) " +
+            "diameter=\(Int(diameter)) (want ≥1 ≥120) todayAboveEvents=\(today.minY >= (rows().map(\.frame.maxY).max() ?? 0) - 0.5) " +
+            "eventsInside=\(bottom >= window.frame.minY) (want true true)")
+        await shot("timer-events-min")
+        window.setContentSize(NSSize(width: 760, height: 560))
     }
 
     /// Three calendars in two accounts; an event under way and four more spread
