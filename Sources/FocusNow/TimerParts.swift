@@ -30,6 +30,43 @@ extension EnvironmentValues {
     @Entry var pendingEdits: PendingEdits? = nil
 }
 
+/// Typed text that couldn't be read gets the standard macOS beep, so a value
+/// that quietly snapped back isn't mistaken for one that was applied.
+@MainActor
+enum InputFeedback {
+    /// How many times typed text was rejected (the self-check reads it).
+    private(set) static var rejections = 0
+
+    static func rejected() {
+        rejections += 1
+        if DebugSnapshots.directory == nil { NSSound.beep() }
+    }
+}
+
+/// Shows `cursor` over the area it backs. AppKit's cursor rects put the arrow
+/// back by themselves when the pointer leaves or the window closes, so the
+/// cursor can't stay stuck the way a pushed one can.
+struct CursorArea: NSViewRepresentable {
+    let cursor: NSCursor
+
+    func makeNSView(context: Context) -> CursorView { CursorView(cursor: cursor) }
+    func updateNSView(_ view: CursorView, context: Context) {}
+
+    final class CursorView: NSView {
+        let cursor: NSCursor
+
+        init(cursor: NSCursor) {
+            self.cursor = cursor
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override func resetCursorRects() { addCursorRect(bounds, cursor: cursor) }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil } // clicks belong to the control
+    }
+}
+
 /// "FOCUS · 1 of 4", "BREAK", "LONG BREAK".
 struct PhaseLabel: View {
     let engine: TimerEngine
@@ -59,7 +96,6 @@ struct TimerRing: View {
     @State private var editing = false
     @State private var draft = ""
     @State private var initialDraft = ""
-    @State private var hovering = false
     @FocusState private var fieldFocused: Bool
     @State private var editID = UUID()
     @Environment(\.pendingEdits) private var pendingEdits
@@ -121,18 +157,13 @@ struct TimerRing: View {
                 .onAppear { DispatchQueue.main.async { fieldFocused = true } }
                 .accessibilityLabel("Next session's length in minutes")
         } else if canEdit {
+            // VoiceOver reads the time, as it does when the digits aren't
+            // clickable, then the help as the hint.
             Button(action: beginEditing) { clockText }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Type the next session's length")
-                .help("Click to type a length")
-                .onHover { inside in
-                    guard inside != hovering else { return }
-                    hovering = inside
-                    if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
-                }
-                .onDisappear {
-                    if hovering { NSCursor.pop(); hovering = false }
-                }
+                .background(CursorArea(cursor: .iBeam).allowsHitTesting(false))
+                .help("Click to type the next session's length")
+                .accessibilityIdentifier(Self.digitsIdentifier)
         } else {
             clockText
         }
@@ -150,10 +181,16 @@ struct TimerRing: View {
         guard editing else { return }
         editing = false
         pendingEdits?.unregister(editID)
-        guard apply, draft != initialDraft,
-              let minutes = LengthInput.minutes(draft, in: TimerSettings.minuteRange) else { return }
+        guard apply, draft != initialDraft else { return }
+        guard let minutes = LengthInput.minutes(draft, in: TimerSettings.minuteRange) else {
+            InputFeedback.rejected()
+            return
+        }
         engine.setNextFocus(minutes: minutes)
     }
+
+    /// Finds the clickable digits (the self-check presses them by this).
+    static let digitsIdentifier = "next-session-length"
 }
 
 /// The buttons for the engine's current state: −/+ and Start, Pause and End early, and so on.

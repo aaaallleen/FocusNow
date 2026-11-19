@@ -29,6 +29,20 @@ struct SettingsStoreTests {
         #expect(makeStore().settings.focusMinutes == 50)
     }
 
+    @Test func onlyAChangedFocusLengthIsAnnounced() {
+        let store = makeStore()
+        var announced = 0
+        store.onFocusMinutesChange = { announced += 1 }
+        store.settings.focusMinutes = 30
+        #expect(announced == 1)
+        store.settings.shortBreakMinutes = 7
+        store.settings.dailyGoalSeconds = 3600
+        store.settings.focusMinutes = 30
+        #expect(announced == 1)
+        store.settings.focusMinutes = 0 // clamps to 1: still a change
+        #expect(announced == 2)
+    }
+
     @Test func valuesAreClamped() {
         let store = makeStore()
         store.settings.focusMinutes = 0

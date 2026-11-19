@@ -37,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             snapshots: FileSnapshotStore(url: dataDir.appendingPathComponent("engine-snapshot.json")),
             clock: clock, calendar: calendar)
 
+        // A one-off length belongs to the Focus default it was set against.
+        settings.onFocusMinutesChange = { [weak engine] in engine?.focusDefaultChanged() }
+
         driver = TimerDriver(engine: engine)
         driver.start()
 
@@ -65,7 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     state: mainState, engine: engine, settings: settings, statsModel: statsModel,
                     onAction: { control in self?.windowTimerWasUsed(control) }))
             },
-            makeSettings: { AnyView(SettingsView(settings: settings)) })
+            makeSettings: { AnyView(SettingsView(settings: settings)) },
+            savesWindowPlace: Self.testDataDir == nil)
         NSApp.mainMenu = makeMainMenu()
         reloadStatsWhenSessionsChange()
         reloadStatsWhenSettingsChange()

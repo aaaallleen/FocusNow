@@ -50,4 +50,10 @@ extension TimerEngine {
         guard status == .idle, nextKind == .focus else { return }
         nextFocusSecondsOverride = minutes.clamped(to: Self.adjustRangeMinutes) * 60
     }
+
+    /// The owner changed the Focus default: a one-off set against the old default
+    /// no longer applies, even if the default is changed back before the next tick.
+    public func focusDefaultChanged() {
+        nextFocusSecondsOverride = nil
+    }
 }

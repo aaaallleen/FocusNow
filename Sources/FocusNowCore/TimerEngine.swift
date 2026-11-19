@@ -36,7 +36,8 @@ public final class TimerEngine {
     public private(set) var now: Date
     /// A one-off length for the next focus session; cleared when it starts. It
     /// belongs to the Focus default it was set against: once that default
-    /// changes it reads as nil, and the next tick drops it for good.
+    /// changes it reads as nil, and `focusDefaultChanged()` (or the next tick)
+    /// drops it for good.
     public var nextFocusSecondsOverride: Int? {
         get {
             guard let oneOff, oneOff.focusMinutes == settings().focusMinutes else { return nil }

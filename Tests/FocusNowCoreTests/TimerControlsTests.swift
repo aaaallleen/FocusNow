@@ -103,6 +103,18 @@ struct TimerControlsTests {
         #expect(e.remainingSeconds == 2400)
     }
 
+    /// Changed and changed back between two ticks: the value matches again, but
+    /// the owner did change the default, so the one-off stays gone.
+    @Test func aFocusDefaultChangedAndChangedBackStillDropsTheOneOff() {
+        e.adjustNextFocus(byMinutes: 5)
+        h.settings.value.focusMinutes = 30
+        e.focusDefaultChanged()
+        h.settings.value.focusMinutes = 40
+        e.focusDefaultChanged()
+        #expect(e.nextFocusSecondsOverride == nil)
+        #expect(e.remainingSeconds == 2400)
+    }
+
     @Test func otherSettingsChangesKeepTheOneOff() {
         e.adjustNextFocus(byMinutes: 5)
         h.settings.value.shortBreakMinutes = 7

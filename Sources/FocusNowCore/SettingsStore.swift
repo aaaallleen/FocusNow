@@ -57,6 +57,9 @@ public final class SettingsStore {
 
     private var current: TimerSettings
 
+    /// Called after every write that changes the Focus length.
+    @ObservationIgnored public var onFocusMinutesChange: (() -> Void)?
+
     /// Every write is clamped to the allowed ranges and persisted at once.
     public var settings: TimerSettings {
         get { current }
@@ -67,6 +70,9 @@ public final class SettingsStore {
             persist(clamped, forKey: Self.settingsKey)
             if clamped.dailyGoalSeconds != old.dailyGoalSeconds {
                 recordGoal(clamped.dailyGoalSeconds)
+            }
+            if clamped.focusMinutes != old.focusMinutes {
+                onFocusMinutesChange?()
             }
         }
     }

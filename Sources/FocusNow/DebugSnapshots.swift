@@ -107,30 +107,49 @@ final class DebugSnapshots {
         await wait(0.15)
     }
 
-    /// Clicks the middle of the control with this accessibility label, found
-    /// through the accessibility tree (SwiftUI's own elements answer the
-    /// NSAccessibility messages but aren't NSAccessibilityProtocol in Swift,
-    /// so they're read by key). Returns whether the control was found.
-    func press(accessibilityLabel label: String, in window: NSWindow) async -> Bool {
-        func value(_ object: NSObject, _ key: String) -> Any? {
-            object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil
-        }
-        guard let root = window.contentView else { return false }
-        var queue: [NSObject] = [root]
-        var frame: NSRect?
-        var visited = 0
-        while !queue.isEmpty, visited < 5000 {
+    /// An accessibility attribute read by key: SwiftUI's own elements answer the
+    /// NSAccessibility messages but aren't NSAccessibilityProtocol in Swift.
+    private static func attribute(_ object: NSObject, _ key: String) -> Any? {
+        object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil
+    }
+
+    /// Every element in `window`'s accessibility tree, breadth first.
+    func accessibilityElements(in window: NSWindow) -> [NSObject] {
+        guard let root = window.contentView else { return [] }
+        var queue: [NSObject] = [root], found: [NSObject] = []
+        while !queue.isEmpty, found.count < 5000 {
             let element = queue.removeFirst()
-            visited += 1
-            if value(element, "accessibilityLabel") as? String == label
-                || value(element, "accessibilityTitle") as? String == label {
-                frame = (value(element, "accessibilityFrame") as? NSValue)?.rectValue
-                break
-            }
-            queue += (value(element, "accessibilityChildren") as? [Any] ?? []).compactMap { $0 as? NSObject }
+            found.append(element)
+            queue += (Self.attribute(element, "accessibilityChildren") as? [Any] ?? []).compactMap { $0 as? NSObject }
         }
-        guard let frame else {
-            note("no control labelled \"\(label)\" (\(visited) elements)")
+        return found
+    }
+
+    /// What VoiceOver announces for the elements with these roles: `role "label"`,
+    /// plus the hint when there is one.
+    func spoken(roles: Set<String>, in window: NSWindow) -> [String] {
+        accessibilityElements(in: window).compactMap { element in
+            guard let role = Self.attribute(element, "accessibilityRole") as? String, roles.contains(role) else { return nil }
+            // A stepper's own arrows: VoiceOver reads them as part of the stepper.
+            let subrole = Self.attribute(element, "accessibilitySubrole") as? String
+            if subrole == "AXIncrementArrow" || subrole == "AXDecrementArrow" { return nil }
+            let label = Self.attribute(element, "accessibilityLabel") as? String ?? ""
+            let help = Self.attribute(element, "accessibilityHelp") as? String
+            return "\(role) \"\(label)\"" + (help.map { " hint=\"\($0)\"" } ?? "")
+        }
+    }
+
+    /// Clicks the middle of the control with this accessibility label or
+    /// identifier, found through the accessibility tree. Returns whether the
+    /// control was found.
+    func press(accessibilityLabel label: String, in window: NSWindow) async -> Bool {
+        let element = accessibilityElements(in: window).first {
+            Self.attribute($0, "accessibilityLabel") as? String == label
+                || Self.attribute($0, "accessibilityTitle") as? String == label
+                || Self.attribute($0, "accessibilityIdentifier") as? String == label
+        }
+        guard let element, let frame = (Self.attribute(element, "accessibilityFrame") as? NSValue)?.rectValue else {
+            note("no control labelled \"\(label)\"")
             return false
         }
         let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
@@ -144,6 +163,20 @@ final class DebugSnapshots {
         }
         await wait(0.3)
         return true
+    }
+
+    /// Clicks `point` (window coordinates) through the app's event queue, the
+    /// way a real click arrives, so event monitors see it too.
+    func postClick(at point: NSPoint, in window: NSWindow) async {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let event = NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                NSApp.postEvent(event, atStart: false)
+            }
+        }
+        await wait(0.6)
     }
 
     /// Clicks the up (or down) arrow of stepper `index`, top to bottom.

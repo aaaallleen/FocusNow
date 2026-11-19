@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "commits", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "commits", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -25,7 +25,54 @@ extension AppDelegate {
                 "loginItemStatus=\(SMAppService.mainApp.status.rawValue)")
         }
         if phases.contains("popover") { await checkPopover(snap) }
+        if phases.contains("outside") { await checkOutside(snap) }
         snap.finish()
+    }
+
+    /// The popover closes on a click elsewhere even though macOS may refuse to
+    /// make the app active (it usually does when another app is in use).
+    func checkOutside(_ snap: DebugSnapshots) async {
+        snap.note("== outside ==")
+        windows.showMain()
+        await snap.wait(0.4)
+        func visible() -> Bool { statusItem.popoverWindowVisible }
+        func anotherAppComesForward() async {
+            let other = NSWorkspace.shared.runningApplications.first {
+                $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && $0.activationPolicy == .regular
+            }
+            NSWorkspace.shared.notificationCenter.post(
+                name: NSWorkspace.didActivateApplicationNotification, object: NSWorkspace.shared,
+                userInfo: other.map { [NSWorkspace.applicationUserInfoKey: $0] })
+            await snap.wait(0.6)
+        }
+
+        statusItem.clicked(); await snap.wait(0.5)
+        snap.note("click-opened: visible=\(visible()) active=\(NSApp.isActive)")
+        await anotherAppComesForward()
+        snap.note("click-opened, another app forward: visible=\(visible()) (want false)")
+        statusItem.closePopover(); await snap.wait(0.6)
+
+        statusItem.clicked(); await snap.wait(0.5)
+        if let popover = statusItem.popoverWindow, let view = popover.contentView {
+            await snap.postClick(at: NSPoint(x: view.bounds.midX, y: view.bounds.maxY - 12), in: popover)
+        }
+        snap.note("click-opened, click inside it: visible=\(visible()) (want true)")
+        if let main = windows.mainWindow {
+            await snap.postClick(at: NSPoint(x: 12, y: 12), in: main)
+        }
+        snap.note("click-opened, click in the main window: visible=\(visible()) (want false)")
+        statusItem.closePopover(); await snap.wait(0.6)
+
+        statusItem.showPopover(fromClick: false); await snap.wait(0.5)
+        await anotherAppComesForward()
+        snap.note("finish-opened, another app forward: visible=\(visible()) (want true)")
+        statusItem.closePopover(); await snap.wait(0.6)
+
+        statusItem.clicked(); await snap.wait(0.6)
+        statusItem.clicked(); await snap.wait(0.1)
+        statusItem.clicked(); await snap.wait(0.9)
+        snap.note("clicked again right after closing: visible=\(visible()) (want true)")
+        statusItem.closePopover(); await snap.wait(0.6)
     }
 
     var policyName: String {
@@ -136,9 +183,10 @@ extension AppDelegate {
             await snap.type("3h 30m", intoField: 0, of: window)
             await snap.pressKey(36, characters: "\r", in: window)
             snap.note("typed 3h 30m → \(goal())")
+            let rejectedBefore = InputFeedback.rejections
             await snap.type("abc", intoField: 0, of: window)
             await snap.pressKey(36, characters: "\r", in: window)
-            snap.note("typed abc → \(goal())")
+            snap.note("typed abc → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
             await snap.type("5h", intoField: 0, of: window)
             await snap.pressKey(53, characters: "\u{1b}", in: window)
             snap.note("escape → \(goal())")
@@ -191,6 +239,12 @@ extension AppDelegate {
         }
         snap.note("launch page=\(mainState.page) mainVisible=\(windows.isMainVisible) fields=\(fields()) " +
             "toolbarItems=\(window.toolbar?.items.count ?? 0) policy=\(policyName)")
+        snap.note("window place saved as \"\(window.frameAutosaveName)\" (want \"\" while testing)")
+        // What VoiceOver reads: the digits read the time, and every field and
+        // pair of arrows says which setting it changes.
+        for line in snap.spoken(roles: ["AXButton", "AXTextField", "AXIncrementor"], in: window) {
+            snap.note("voiceover: \(line)")
+        }
         window.appearance = NSAppearance(named: .aqua)
         await shot("timer-idle")
         window.appearance = NSAppearance(named: .darkAqua)
@@ -212,6 +266,11 @@ extension AppDelegate {
         window.makeFirstResponder(nil)
         await snap.wait(0.3)
         snap.note("defaults kept after blur: focus=\(settings.settings.focusMinutes) after=\(settings.settings.sessionsBeforeLongBreak)")
+        // Focus changed and changed back before the next tick still drops a one-off.
+        engine.setNextFocus(minutes: 50)
+        settings.settings.focusMinutes = 30
+        settings.settings.focusMinutes = 40
+        snap.note("one-off after focus 30 and back: \(engine.nextFocusSecondsOverride.map(String.init) ?? "none") (want none)")
 
         // A session hides the configuration; the timer fills the window.
         engine.start()
@@ -271,7 +330,7 @@ extension AppDelegate {
             snap.note("no main window")
             return
         }
-        let label = "Type the next session's length"
+        let label = TimerRing.digitsIdentifier
         func remaining() -> Int { engine.remainingSeconds }
         /// Clicks the digits and types; returns whether a field took the text.
         func edit(_ text: String, in window: NSWindow) async -> Bool {
@@ -288,8 +347,14 @@ extension AppDelegate {
         // On the Timer page.
         if await edit("25", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
         snap.note("digits 25 → remaining=\(remaining())")
+        let rejectedBefore = InputFeedback.rejections
         if await edit("abc", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
-        snap.note("digits abc → \(remaining())")
+        snap.note("digits abc → \(remaining()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
+        if await edit("45:00", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
+        snap.note("digits 45:00 → \(remaining()) (want 2700)")
+        if await edit("25:30", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
+        snap.note("digits 25:30 → \(remaining()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 2)")
+        engine.setNextFocus(minutes: 25)
         if await edit("50", in: window) { await snap.pressKey(esc.0, characters: esc.1, in: window) }
         snap.note("digits escape → \(remaining())")
 
@@ -346,7 +411,7 @@ extension AppDelegate {
         }
         func planned() -> Int { engine.active?.plannedSeconds ?? -1 }
         func typeDigits(_ text: String) async {
-            guard await snap.press(accessibilityLabel: "Type the next session's length", in: window),
+            guard await snap.press(accessibilityLabel: TimerRing.digitsIdentifier, in: window),
                   window.firstResponder is NSText else {
                 snap.note("digits did not become a field")
                 return
@@ -407,7 +472,7 @@ extension AppDelegate {
         engine.nextFocusSecondsOverride = 2
         engine.start()
         await snap.wait(3.0)
-        snap.note("finished: popoverVisible=\(statusItem.popoverWindowVisible) behavior=\(statusItem.popoverBehavior.rawValue)")
+        snap.note("finished: popoverVisible=\(statusItem.popoverWindowVisible) closesOnOutsideClick=\(statusItem.closesOnOutsideClick)")
         _ = await snap.press(accessibilityLabel: "Start break", in: window)
         await snap.wait(0.6)
         snap.note("Start break in window → popoverVisible=\(statusItem.popoverWindowVisible) status=\(engine.status) phase=\"\(engine.phaseLabel)\"")
@@ -472,7 +537,7 @@ extension AppDelegate {
         // Clicking the item toggles the popover.
         statusItem.clicked()
         await snap.wait(0.1)
-        snap.note("click 1: popoverVisible=\(statusItem.popoverWindowVisible) behavior=\(statusItem.popoverBehavior.rawValue) active=\(NSApp.isActive)")
+        snap.note("click 1: popoverVisible=\(statusItem.popoverWindowVisible) closesOnOutsideClick=\(statusItem.closesOnOutsideClick) active=\(NSApp.isActive)")
         await snap.wait(1.0)
         statusItem.clicked()
         snap.note("click 2: popoverVisible=\(statusItem.popoverWindowVisible)")
@@ -493,8 +558,8 @@ extension AppDelegate {
         await snap.wait(3.0)
         state("focus finished")
         snap.note("sound would play: \(settings.settings.soundOn && NSSound(named: FinishAlerter.soundName) != nil)")
-        snap.note("finished popover behavior=\(statusItem.popoverBehavior.rawValue) " +
-            "(0=applicationDefined 1=transient) frontmost=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
+        snap.note("finished popover closesOnOutsideClick=\(statusItem.closesOnOutsideClick) " +
+            "frontmost=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")
         menubar("menubar finished")
         var alphas: [String] = []
         for _ in 0..<5 {

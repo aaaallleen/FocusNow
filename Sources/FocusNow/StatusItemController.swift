@@ -12,9 +12,19 @@ final class StatusItemController: NSObject {
     private var flashTimer: Timer?
     private var flashDimmed = false
 
+    /// Whether a click anywhere else closes the popover: yes when a click opened
+    /// it, no when a finished countdown did (until the owner uses it).
+    private(set) var closesOnOutsideClick = false
+    /// Watches for clicks and app switches outside the popover while it shows.
+    private var outsideMonitors: [Any] = []
+    private var appSwitchObserver: NSObjectProtocol?
+    /// The close animation is still running (`isShown` stays true until it ends).
+    private(set) var isClosing = false
+    /// Clicked again while it was closing: show it once the close finishes.
+    private var reopenWhenClosed = false
+
     var button: NSStatusBarButton? { item.button }
     var isPopoverShown: Bool { popover.isShown }
-    var popoverBehavior: NSPopover.Behavior { popover.behavior }
     var isFlashing: Bool { flashTimer != nil }
     var popoverWindowVisible: Bool { popover.contentViewController?.view.window?.isVisible ?? false }
     var popoverWindow: NSWindow? { popover.contentViewController?.view.window }
@@ -28,6 +38,10 @@ final class StatusItemController: NSObject {
         self.engine = engine
         super.init()
         popover.animates = true
+        // Closing is handled here rather than by `.transient`, which only closes
+        // on outside clicks while the app is active, and macOS usually declines
+        // to activate a menu bar app when another app is in use.
+        popover.behavior = .applicationDefined
         popover.delegate = self
         item.button?.target = self
         item.button?.action = #selector(clicked)
@@ -44,13 +58,21 @@ final class StatusItemController: NSObject {
     /// the popover stays until the owner responds.
     func showPopover(fromClick: Bool) {
         guard let button = item.button else { return }
-        popover.behavior = fromClick ? .transient : .applicationDefined
+        closesOnOutsideClick = fromClick
+        if isClosing {
+            reopenWhenClosed = true
+            return
+        }
         if popover.isShown { return }
         if fromClick { NSApp.activate() }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        watchOutside()
     }
 
     func closePopover() {
+        reopenWhenClosed = false
+        guard popover.isShown, !isClosing else { return }
+        stopWatchingOutside()
         endEditing()
         popover.close()
     }
@@ -61,24 +83,69 @@ final class StatusItemController: NSObject {
     }
 
     /// The owner answered a finish in the window: the popover the finish opened
-    /// has done its job (it wouldn't close on an outside click by itself).
+    /// has done its job (it doesn't close on an outside click by itself).
     func ownerRespondedElsewhere() {
-        if popover.behavior == .applicationDefined { closePopover() }
+        if !closesOnOutsideClick { closePopover() }
     }
 
     /// After the owner interacts with a popover opened by a finish, it behaves
     /// like a clicked one again.
     func popoverWasUsed() {
-        popover.behavior = .transient
+        closesOnOutsideClick = true
     }
 
     @objc func clicked() {
         engine.acknowledge()
-        if popover.isShown {
+        if popover.isShown && !isClosing {
             closePopover()
         } else {
             showPopover(fromClick: true)
         }
+    }
+
+    // MARK: - Closing on outside clicks
+
+    /// A click in another app, on the desktop or in the menu bar; a click in one
+    /// of this app's windows other than the popover; or another app coming
+    /// forward (⌘-Tab) closes a popover that closes on outside clicks.
+    private func watchOutside() {
+        guard outsideMonitors.isEmpty else { return }
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.interactionOutside() }
+        }) {
+            outsideMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                // The item's own clicks toggle the popover through `clicked()`.
+                guard let self, event.window !== self.popoverWindow,
+                      event.window !== self.item.button?.window else { return }
+                self.interactionOutside()
+            }
+            return event
+        }) {
+            outsideMonitors.append(local)
+        }
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        appSwitchObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.processIdentifier != ownPID else { return }
+            MainActor.assumeIsolated { self?.interactionOutside() }
+        }
+    }
+
+    private func stopWatchingOutside() {
+        outsideMonitors.forEach(NSEvent.removeMonitor)
+        outsideMonitors.removeAll()
+        if let appSwitchObserver { NSWorkspace.shared.notificationCenter.removeObserver(appSwitchObserver) }
+        appSwitchObserver = nil
+    }
+
+    private func interactionOutside() {
+        if closesOnOutsideClick { closePopover() }
     }
 
     // MARK: - Drawing
@@ -164,8 +231,18 @@ final class StatusItemController: NSObject {
 }
 
 extension StatusItemController: NSPopoverDelegate {
-    /// The popover closing by itself (a click outside) also commits a half-typed length.
+    /// However the popover closes, a half-typed length is committed first.
     func popoverWillClose(_ notification: Notification) {
+        isClosing = true
+        stopWatchingOutside()
         endEditing()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        isClosing = false
+        if reopenWhenClosed {
+            reopenWhenClosed = false
+            showPopover(fromClick: closesOnOutsideClick)
+        }
     }
 }

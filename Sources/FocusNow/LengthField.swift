@@ -3,9 +3,12 @@ import SwiftUI
 /// A number you can type or step: a text field, an optional unit, and a stepper.
 ///
 /// Typed text commits on Return or when the field loses focus. Text that
-/// `parse` can't read puts the previous value back; Escape does the same.
-/// `parse` clamps, so out-of-range numbers land on the nearest allowed value.
+/// `parse` can't read beeps and puts the previous value back; Escape puts it
+/// back quietly. `parse` clamps, so out-of-range numbers land on the nearest
+/// allowed value.
 struct LengthField: View {
+    /// What VoiceOver calls the field and its arrows ("Focus", "Daily focus goal").
+    let label: String
     @Binding var value: Int
     let range: ClosedRange<Int>
     let step: Int
@@ -21,9 +24,10 @@ struct LengthField: View {
     @State private var editID = UUID()
     @Environment(\.pendingEdits) private var pendingEdits
 
-    init(value: Binding<Int>, range: ClosedRange<Int>, step: Int, unit: String?,
+    init(_ label: String, value: Binding<Int>, range: ClosedRange<Int>, step: Int, unit: String?,
          parse: @escaping (String) -> Int?, format: @escaping (Int) -> String,
          fieldWidth: CGFloat = 52, unitWidth: CGFloat? = nil) {
+        self.label = label
         self._value = value
         self.range = range
         self.step = step
@@ -44,14 +48,17 @@ struct LengthField: View {
                 .focused($focused)
                 .onSubmit(commit)
                 .onExitCommand(perform: revert)
+                .accessibilityLabel(label)
             if let unit {
                 Text(unit)
                     .foregroundStyle(.secondary)
                     .fixedSize()
                     .frame(width: unitWidth, alignment: .leading)
+                    .accessibilityHidden(true) // the field's value reads with its unit below
             }
-            Stepper("", value: stepperValue, in: range, step: step)
+            Stepper(label, value: stepperValue, in: range, step: step)
                 .labelsHidden()
+                .accessibilityValue(format(value) + (unit.map { " " + $0 } ?? ""))
         }
         .onAppear { text = format(value) }
         .onChange(of: value) { old, new in
@@ -88,7 +95,9 @@ struct LengthField: View {
     }
 
     private func commit() {
-        if text != format(value), let parsed = parse(text) { value = parsed }
+        if text != format(value) {
+            if let parsed = parse(text) { value = parsed } else { InputFeedback.rejected() }
+        }
         text = format(value)
     }
 

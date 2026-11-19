@@ -1,6 +1,9 @@
 #!/bin/bash
 # Builds the app and runs its self-check against a scratch data folder, never
 # real data. Prints the self-check log.
+# The popover reacts to real clicks and app switches, so clicking elsewhere or
+# switching apps during a run can close it mid-check; rerun before trusting a
+# popover failure seen while the machine was in use.
 # Usage: scripts/self-check.sh [phases]   (comma-separated; default: every phase)
 set -euo pipefail
 cd "$(dirname "$0")/.."

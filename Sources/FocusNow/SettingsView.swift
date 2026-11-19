@@ -13,7 +13,7 @@ struct SettingsView: View {
             Section("Goal") {
                 LabeledContent("Daily focus goal") {
                     LengthField(
-                        value: $settings.settings.dailyGoalSeconds, range: TimerSettings.goalRange,
+                        "Daily focus goal", value: $settings.settings.dailyGoalSeconds, range: TimerSettings.goalRange,
                         step: 900, unit: nil, parse: LengthInput.goalSeconds,
                         format: TimeFormat.duration, fieldWidth: 72)
                 }

@@ -1,4 +1,5 @@
 import AppKit
+import FocusNowCore
 import SwiftUI
 
 /// Owns the main window (Timer and Stats pages), the settings window and the
@@ -8,12 +9,20 @@ import SwiftUI
 final class WindowCoordinator: NSObject, NSWindowDelegate {
     private let makeMain: () -> AnyView
     private let makeSettings: () -> AnyView
+    /// False while testing: the window's place lives in the app's real
+    /// preferences, which a test run must not touch.
+    private let savesWindowPlace: Bool
     private(set) var mainWindow: NSWindow?
     private var settingsWindow: NSWindow?
 
-    init(makeMain: @escaping () -> AnyView, makeSettings: @escaping () -> AnyView) {
+    private static let mainAutosaveName = "FocusNowMainWindow"
+    /// The Stats window the main window replaced.
+    private static let statsAutosaveName = "FocusStatsWindow"
+
+    init(makeMain: @escaping () -> AnyView, makeSettings: @escaping () -> AnyView, savesWindowPlace: Bool) {
         self.makeMain = makeMain
         self.makeSettings = makeSettings
+        self.savesWindowPlace = savesWindowPlace
     }
 
     var isMainVisible: Bool { mainWindow?.isVisible ?? false }
@@ -27,8 +36,14 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
             window.toolbarStyle = .unified
             window.setContentSize(NSSize(width: 760, height: 560))
             window.contentMinSize = NSSize(width: 640, height: 480)
-            window.setFrameAutosaveName("FocusNowMainWindow")
-            if !window.setFrameUsingName("FocusNowMainWindow") { window.center() }
+            if savesWindowPlace {
+                // The first time after upgrading, open where the Stats window was.
+                WindowFrames.carryOver(from: Self.statsAutosaveName, to: Self.mainAutosaveName, in: .standard)
+                window.setFrameAutosaveName(Self.mainAutosaveName)
+                if !window.setFrameUsingName(Self.mainAutosaveName) { window.center() }
+            } else {
+                window.center()
+            }
             mainWindow = window
         }
         present(mainWindow!)

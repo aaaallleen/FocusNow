@@ -14,8 +14,19 @@ struct LengthInputTests {
         #expect(LengthInput.minutes("999", in: 1...180) == 180)
     }
 
+    /// The digits read "25:00", so typing in the same form works: seconds must be zero.
+    @Test func minutesAcceptTheClockFormWithZeroSeconds() {
+        #expect(LengthInput.minutes("25:00", in: 1...180) == 25)
+        #expect(LengthInput.minutes("5:00", in: 1...180) == 5)
+        #expect(LengthInput.minutes(" 45:00 ", in: 1...180) == 45)
+        #expect(LengthInput.minutes("1:30:00", in: 1...180) == 90)
+        #expect(LengthInput.minutes("２５：００", in: 1...180) == 25)
+        #expect(LengthInput.minutes("0:00", in: 1...180) == 1)
+        #expect(LengthInput.minutes("9:00:00", in: 1...180) == 180)
+    }
+
     @Test func minutesRejectEverythingElse() {
-        for text in ["", "  ", "abc", "-5", "2.5", "25:00", "1:30", "25h", "m"] {
+        for text in ["", "  ", "abc", "-5", "2.5", "1:30", "25:30", "25:0", "1:30:30", "1:75:00", ":30", "25h", "m"] {
             #expect(LengthInput.minutes(text, in: 1...180) == nil, "\(text)")
         }
     }
@@ -39,6 +50,14 @@ struct LengthInputTests {
         for (text, seconds) in cases { #expect(LengthInput.goalSeconds(text) == seconds, "\(text)") }
     }
 
+    @Test func goalAcceptsMinutesWithoutAUnitAfterHoursAndSpelledOutForms() {
+        let cases: [(String, Int)] = [
+            ("3h 30", 12_600), ("3h30", 12_600), ("1 hour 30 minutes", 5_400), ("1 hour and 30 minutes", 5_400),
+            ("2 hrs 15 mins", 8_100), ("1 hr 5 min", 3_900), ("2 hours 45", 9_900),
+        ]
+        for (text, seconds) in cases { #expect(LengthInput.goalSeconds(text) == seconds, "\(text)") }
+    }
+
     @Test func goalClampsToFifteenMinutesThroughSixteenHours() {
         #expect(LengthInput.goalSeconds("5m") == 900)
         #expect(LengthInput.goalSeconds("20h") == 57_600)
@@ -46,6 +65,8 @@ struct LengthInputTests {
 
     @Test func hugeNumbersClampInsteadOfCrashing() {
         #expect(LengthInput.minutes("99999999999999999999", in: 1...180) == 180)
+        #expect(LengthInput.minutes("99999999999999999999:00", in: 1...180) == 180)
+        #expect(LengthInput.minutes("99999999999999999999:30:00", in: 1...180) == 180)
         #expect(LengthInput.sessions("99999999999999999999", in: 1...12) == 12)
         for text in ["99999999999999999999", "9000000000000000000h", "9000000000000000000:00",
                      "9000000000000000000m", "9000000000000000000h 5m"] {
