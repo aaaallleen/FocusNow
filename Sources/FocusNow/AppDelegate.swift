@@ -9,7 +9,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var engine: TimerEngine!
     private(set) var statusItem: StatusItemController!
     private(set) var alerter: FinishAlerter!
+    private(set) var statsModel: StatsViewModel!
+    private(set) var windows: WindowCoordinator!
     private var driver: TimerDriver!
+    private var launchedAsLoginItem = false
+    var launchedAsLoginItemForCheck: Bool { launchedAsLoginItem }
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // A login-item launch starts quietly in the menu bar; any other launch opens Stats.
+        if let event = NSAppleEventManager.shared().currentAppleEvent, event.eventID == kAEOpenApplication {
+            launchedAsLoginItem =
+                event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let calendar = Calendar.autoupdatingCurrent
@@ -41,9 +53,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.statusItem.showPopover(fromClick: true)
         }
 
+        let statsModel = StatsViewModel(
+            sessions: sessions, goal: { settings.goal(on: $0) }, clock: clock, calendar: calendar)
+        self.statsModel = statsModel
+        windows = WindowCoordinator(
+            makeStats: { AnyView(StatsView(model: statsModel)) },
+            makeSettings: { AnyView(Text("Settings")) })
+        reloadStatsWhenSessionsChange()
+        NotificationCenter.default.addObserver(
+            forName: .NSCalendarDayChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.statsModel.reload() }
+        }
+
+        if !launchedAsLoginItem {
+            showStats()
+        }
+
         if let dir = DebugSnapshots.directory {
             alerter.isSelfCheck = true
             Task { await runSelfCheck(DebugSnapshots(dir: dir)) }
+        }
+    }
+
+    /// Spotlight, Launchpad or Finder while already running: bring Stats back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showStats()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    private func reloadStatsWhenSessionsChange() {
+        withObservationTracking {
+            _ = engine.savedSessionCount
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.statsModel.reload()
+                self?.reloadStatsWhenSessionsChange()
+            }
         }
     }
 
@@ -68,9 +118,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }
 
-    func showStats() {}
+    func showStats() {
+        statusItem.closePopover()
+        statsModel.reload()
+        windows.showStats()
+    }
 
-    func showSettings() {}
+    func showSettings() {
+        statusItem.closePopover()
+        windows.showSettings()
+    }
 
     // MARK: - Storage
 

@@ -13,6 +13,7 @@ final class DebugSnapshots {
     }
 
     private let dir: URL
+    var directory: URL { dir }
     private var log: [String] = []
 
     init(dir: URL) {
