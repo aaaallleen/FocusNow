@@ -18,6 +18,8 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     var isStatsVisible: Bool { statsWindow?.isVisible ?? false }
     var isSettingsVisible: Bool { settingsWindow?.isVisible ?? false }
+    var settingsContentView: NSView? { settingsWindow?.contentView }
+    var statsContentView: NSView? { statsWindow?.contentView }
 
     func showStats() {
         if statsWindow == nil {

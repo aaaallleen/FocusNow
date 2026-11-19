@@ -58,8 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.statsModel = statsModel
         windows = WindowCoordinator(
             makeStats: { AnyView(StatsView(model: statsModel)) },
-            makeSettings: { AnyView(Text("Settings")) })
+            makeSettings: { AnyView(SettingsView(settings: settings)) })
+        NSApp.mainMenu = makeMainMenu()
         reloadStatsWhenSessionsChange()
+        reloadStatsWhenSettingsChange()
         NotificationCenter.default.addObserver(
             forName: .NSCalendarDayChanged, object: nil, queue: .main
         ) { [weak self] _ in
@@ -84,6 +86,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         false
+    }
+
+    /// Shown while a window is open (the app is a regular app then).
+    private func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+
+        let appMenu = NSMenu(title: "FocusNow")
+        appMenu.addItem(withTitle: "About FocusNow",
+                        action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        let settingsItem = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide FocusNow", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Quit FocusNow", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(withTitle: "FocusNow", action: nil, keyEquivalent: "").submenu = appMenu
+
+        let windowMenu = NSMenu(title: "Window")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        let statsItem = windowMenu.addItem(withTitle: "Focus Stats", action: #selector(openStats), keyEquivalent: "")
+        statsItem.target = self
+        main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
+
+        return main
+    }
+
+    @objc private func openSettings() { showSettings() }
+
+    @objc private func openStats() { showStats() }
+
+    /// A changed goal changes the stats (the goal line and today's tile).
+    private func reloadStatsWhenSettingsChange() {
+        withObservationTracking {
+            _ = settings.settings
+        } onChange: { [weak self] in
+            Task { @MainActor in
+                self?.statsModel.reload()
+                self?.reloadStatsWhenSettingsChange()
+            }
+        }
     }
 
     private func reloadStatsWhenSessionsChange() {

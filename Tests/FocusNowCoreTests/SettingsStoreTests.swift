@@ -47,7 +47,15 @@ struct SettingsStoreTests {
 
     @Test func goalHistoryIsSeededOnFirstLaunch() {
         let store = makeStore()
-        #expect(store.goalHistory == [GoalChange(day: date("2026-11-19T00:00:00Z"), seconds: 14_400)])
+        #expect(store.goalHistory == [GoalChange(day: .distantPast, seconds: 14_400)])
+    }
+
+    @Test func changingTheGoalOnTheFirstDayKeepsEarlierDaysAtTheOldGoal() {
+        let store = makeStore()
+        store.settings.dailyGoalSeconds = 10_800
+        #expect(store.goal(on: date("2026-11-19T08:00:00Z")) == 10_800)
+        #expect(store.goal(on: date("2026-11-01T00:00:00Z")) == 14_400)
+        #expect(store.goalHistory.count == 2)
     }
 
     @Test func changingGoalDoesNotRewritePastDays() {

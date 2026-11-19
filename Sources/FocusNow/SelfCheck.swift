@@ -1,5 +1,6 @@
 import AppKit
 import FocusNowCore
+import ServiceManagement
 import SwiftUI
 
 /// The self-check script run when FOCUSNOW_SNAPSHOT_DIR is set (see DebugSnapshots).
@@ -7,12 +8,19 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["popover", "stats"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) statsVisible=\(windows.isStatsVisible) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
             "iconFile=\(Bundle.main.url(forResource: "AppIcon", withExtension: "icns") != nil)")
         if phases.contains("stats") { await checkStats(snap) }
+        if phases.contains("settings") { await checkSettings(snap) }
+        if phases.contains("persist") {
+            let s = settings.settings
+            snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
+                "idleRemaining=\(engine.remainingSeconds) goalHistory=\(settings.goalHistory.count) " +
+                "loginItemStatus=\(SMAppService.mainApp.status.rawValue)")
+        }
         if phases.contains("popover") { await checkPopover(snap) }
         snap.finish()
     }
@@ -90,6 +98,57 @@ extension AppDelegate {
         snap.note("live refresh: today sessions before=\(before) after=\(statsModel.tiles[.day]?.sessionCount ?? -1)")
         closeAllWindows()
         await snap.wait(0.3)
+    }
+
+    func checkSettings(_ snap: DebugSnapshots) async {
+        snap.note("== settings ==")
+        let s = settings.settings
+        snap.note("defaults: focus=\(s.focusMinutes) short=\(s.shortBreakMinutes) long=\(s.longBreakMinutes) " +
+            "after=\(s.sessionsBeforeLongBreak) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
+            "loginItemStatus=\(SMAppService.mainApp.status.rawValue) (0=notRegistered 1=enabled 2=requiresApproval 3=notFound)")
+
+        // ⌘, through the real menu item.
+        closeAllWindows()
+        await snap.wait(0.4)
+        let appMenu = NSApp.mainMenu?.item(withTitle: "FocusNow")?.submenu
+        let settingsItem = appMenu?.item(withTitle: "Settings…")
+        let quitItem = appMenu?.item(withTitle: "Quit FocusNow")
+        snap.note("menu: Settings… key=\"\(settingsItem?.keyEquivalent ?? "-")\" Quit key=\"\(quitItem?.keyEquivalent ?? "-")\" " +
+            "Window menu=\(NSApp.mainMenu?.item(withTitle: "Window")?.submenu?.items.map(\.title) ?? [])")
+        if let item = settingsItem, let action = item.action {
+            NSApp.sendAction(action, to: item.target, from: item)
+        }
+        await snap.wait(0.6)
+        snap.note("after ⌘,: settingsVisible=\(windows.isSettingsVisible) policy=\(policyName)")
+        if let view = windows.settingsContentView { snap.capture(view, as: "settings-live", scale: 1) }
+
+        // Changes apply at once.
+        engine.skipBreak() // the stats phase may have left a break pending
+        settings.settings.focusMinutes = 50
+        await snap.wait(0.2)
+        snap.note("focus → 50: idle popover shows \(TimeFormat.clock(engine.remainingSeconds))")
+        settings.settings.focusMinutes = 0
+        snap.note("focus → 0 is clamped to \(settings.settings.focusMinutes)")
+        settings.settings.focusMinutes = 50
+
+        // A new goal applies from today and leaves past days alone.
+        statsModel.range = .month
+        let metBefore = statsModel.summary.goalMetDays
+        settings.settings.dailyGoalSeconds = 3 * 3600
+        await snap.wait(0.3)
+        snap.note("goal → 3h: todayGoal=\(TimeFormat.duration(statsModel.todayGoalSeconds)) " +
+            "month goal-met days before=\(metBefore) after=\(statsModel.summary.goalMetDays) history=\(settings.goalHistory.count)")
+        statsModel.range = .week
+
+        // Sound off silences the finish sound.
+        settings.settings.soundOn = false
+        snap.note("sound off: finish would play sound=\(alerter.sessionFinished(.focus))")
+        await snap.wait(0.3)
+        if let view = windows.settingsContentView { snap.capture(view, as: "settings-after-changes", scale: 1) }
+
+        closeAllWindows()
+        await snap.wait(0.4)
+        snap.note("after closing Settings: policy=\(policyName)")
     }
 
     private func closeAllWindows() {

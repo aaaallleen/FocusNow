@@ -82,7 +82,8 @@ public final class SettingsStore {
         self.current = loaded
         var history = Self.load([GoalChange].self, forKey: Self.goalHistoryKey, from: defaults) ?? []
         if history.isEmpty {
-            history = [GoalChange(day: calendar.startOfDay(for: clock()), seconds: loaded.dailyGoalSeconds)]
+            // The goal before any recorded change applies to every earlier day.
+            history = [GoalChange(day: .distantPast, seconds: loaded.dailyGoalSeconds)]
             self.goalHistory = history
             persist(history, forKey: Self.goalHistoryKey)
         } else {
