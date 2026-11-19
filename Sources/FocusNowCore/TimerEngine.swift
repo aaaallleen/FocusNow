@@ -8,6 +8,10 @@ public final class TimerEngine {
     public enum Status: Equatable, Sendable { case idle, running, paused }
 
     public static let minimumLoggedFocusSeconds = 60
+    /// A longer silence between ticks while running is treated as blank time.
+    public static let blankGapSeconds: TimeInterval = 30
+    /// How often a running session is checkpointed for crash recovery.
+    public static let snapshotIntervalSeconds: TimeInterval = 15
 
     @ObservationIgnored private let settings: () -> TimerSettings
     @ObservationIgnored private let sessions: SessionStore
@@ -35,6 +39,9 @@ public final class TimerEngine {
     @ObservationIgnored private var todayCache: (day: Date, seconds: Int)?
     /// The local day of the cycle's most recent activity; a new day starts a new cycle.
     @ObservationIgnored private var cycleDay: Date
+    /// When the engine last heard from the app (a tick or an action).
+    @ObservationIgnored private var lastSeen: Date
+    @ObservationIgnored private var lastSnapshotAt: Date?
 
     public init(
         settings: @escaping () -> TimerSettings, sessions: SessionStore,
@@ -47,7 +54,9 @@ public final class TimerEngine {
         self.calendar = calendar
         let launchedAt = clock()
         self.now = launchedAt
+        self.lastSeen = launchedAt
         self.cycleDay = calendar.startOfDay(for: launchedAt)
+        recover(from: snapshots.load())
     }
 
     // MARK: - Derived values
@@ -101,15 +110,12 @@ public final class TimerEngine {
         active = ActiveSession(kind: nextKind, startedAt: now, plannedSeconds: planned, lastResumedAt: now)
         status = .running
         needsAttention = false
+        saveSnapshot()
     }
 
     public func pause() {
         refreshNow()
-        guard status == .running, var session = active else { return }
-        session.accumulatedSeconds = session.activeSeconds(at: now)
-        session.lastResumedAt = nil
-        active = session
-        status = .paused
+        pause(asOf: now)
     }
 
     public func resume() {
@@ -118,6 +124,7 @@ public final class TimerEngine {
         session.lastResumedAt = now
         active = session
         status = .running
+        saveSnapshot()
     }
 
     public func endEarly() {
@@ -131,6 +138,7 @@ public final class TimerEngine {
         guard status != .idle else { return }
         active = nil
         status = .idle
+        saveSnapshot()
     }
 
     /// Ends a running or paused break (logging its active time), or skips a
@@ -143,6 +151,7 @@ public final class TimerEngine {
         } else {
             guard nextKind.isBreak else { return }
             advanceCycle(after: nextKind)
+            saveSnapshot()
         }
         needsAttention = false
     }
@@ -152,20 +161,76 @@ public final class TimerEngine {
     }
 
     public func tick() {
+        let previous = lastSeen
         refreshNow()
-        if status == .idle { rollOverDayIfNeeded() }
-        guard status == .running, let session = active, let endsAt = session.endsAt, now >= endsAt else { return }
-        finish(session, outcome: .completed, at: endsAt)
+        if status == .idle {
+            rollOverDayIfNeeded()
+            return
+        }
+        guard status == .running, let session = active else { return }
+        if now.timeIntervalSince(previous) > Self.blankGapSeconds {
+            // The app wasn't running for a while (forced sleep, a stall): that gap is blank.
+            pause(asOf: previous)
+            return
+        }
+        if let endsAt = session.endsAt, now >= endsAt {
+            finish(session, outcome: .completed, at: endsAt)
+        } else if lastSnapshotAt.map({ now.timeIntervalSince($0) >= Self.snapshotIntervalSeconds }) ?? true {
+            saveSnapshot()
+        }
     }
 
-    public func systemWillSleep() {}
+    /// The Mac is about to sleep: sleep is blank time, so pause.
+    public func systemWillSleep() {
+        refreshNow()
+        pause(asOf: now)
+    }
 
-    public func prepareForQuit() {}
+    /// The app is quitting: log the session so far, as End early would.
+    public func prepareForQuit() {
+        refreshNow()
+        if status != .idle, let session = active {
+            finish(session, outcome: .endedEarly, at: now)
+        }
+        saveSnapshot()
+    }
 
     // MARK: - Internals
 
     private func refreshNow() {
         now = clock()
+        lastSeen = now
+    }
+
+    private func pause(asOf moment: Date) {
+        guard status == .running, var session = active else { return }
+        session.accumulatedSeconds = min(TimeInterval(session.plannedSeconds), session.activeSeconds(at: moment))
+        session.lastResumedAt = nil
+        active = session
+        status = .paused
+        saveSnapshot()
+    }
+
+    private func saveSnapshot() {
+        lastSnapshotAt = now
+        snapshots.save(EngineSnapshot(
+            active: active, savedAt: now, cyclePosition: cyclePosition,
+            cycleDay: cycleDay, nextKind: nextKind))
+    }
+
+    /// Restores the cycle from the last run and logs a session the last run
+    /// never got to finish (a crash or forced shutdown), up to its last checkpoint.
+    private func recover(from snapshot: EngineSnapshot?) {
+        guard let snapshot else { return }
+        cyclePosition = snapshot.cyclePosition
+        nextKind = snapshot.nextKind
+        cycleDay = snapshot.cycleDay
+        if let session = snapshot.active {
+            let end = min(snapshot.savedAt, session.endsAt ?? snapshot.savedAt)
+            finish(session, outcome: .endedEarly, at: end, notify: false)
+        }
+        rollOverDayIfNeeded()
+        saveSnapshot()
     }
 
     private func advanceCycle(after kind: SessionKind) {
@@ -192,14 +257,17 @@ public final class TimerEngine {
 
     /// Ends `session` at `end`, logging it unless it is a focus session ended
     /// before the one-minute minimum.
-    private func finish(_ session: ActiveSession, outcome: Outcome, at end: Date) {
+    private func finish(_ session: ActiveSession, outcome: Outcome, at end: Date, notify: Bool = true) {
         let activeSeconds = min(session.plannedSeconds, Int(session.activeSeconds(at: end).rounded()))
         active = nil
         status = .idle
 
         let tooShort = session.kind == .focus && outcome == .endedEarly
             && activeSeconds < Self.minimumLoggedFocusSeconds
-        if tooShort { return }
+        if tooShort {
+            saveSnapshot()
+            return
+        }
 
         advanceCycle(after: session.kind)
         cycleDay = calendar.startOfDay(for: end)
@@ -209,8 +277,9 @@ public final class TimerEngine {
             outcome: outcome, origin: .manual))
         todayCache = nil
         savedSessionCount += 1
+        saveSnapshot()
 
-        if outcome == .completed {
+        if outcome == .completed, notify {
             needsAttention = true
             onFinish?(session.kind)
         }
