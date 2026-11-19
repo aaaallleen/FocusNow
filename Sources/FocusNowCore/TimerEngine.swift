@@ -1,0 +1,175 @@
+import Foundation
+import Observation
+
+/// The focus/break timer. All time comes from the injected clock; the app calls
+/// `tick()` a couple of times a second and the engine works out the rest.
+@MainActor @Observable
+public final class TimerEngine {
+    public enum Status: Equatable, Sendable { case idle, running, paused }
+
+    public static let minimumLoggedFocusSeconds = 60
+
+    @ObservationIgnored private let settings: () -> TimerSettings
+    @ObservationIgnored private let sessions: SessionStore
+    @ObservationIgnored private let snapshots: SnapshotStore
+    @ObservationIgnored private let clock: () -> Date
+    @ObservationIgnored private let calendar: Calendar
+
+    /// Called when a countdown reaches zero (not when a session is ended early).
+    @ObservationIgnored public var onFinish: ((SessionKind) -> Void)?
+
+    public private(set) var status: Status = .idle
+    public private(set) var active: ActiveSession?
+    /// What `start()` will begin.
+    public private(set) var nextKind: SessionKind = .focus
+    /// True from a countdown reaching zero until the owner responds.
+    public private(set) var needsAttention = false
+    /// Focus sessions done in the current cycle.
+    public private(set) var cyclePosition = 0
+    public private(set) var now: Date
+    /// A one-off length for the next focus session; cleared when it starts.
+    public var nextFocusSecondsOverride: Int?
+    /// Increments every time a session record is saved.
+    public private(set) var savedSessionCount = 0
+
+    @ObservationIgnored private var todayCache: (day: Date, seconds: Int)?
+
+    public init(
+        settings: @escaping () -> TimerSettings, sessions: SessionStore,
+        snapshots: SnapshotStore, clock: @escaping () -> Date, calendar: Calendar
+    ) {
+        self.settings = settings
+        self.sessions = sessions
+        self.snapshots = snapshots
+        self.clock = clock
+        self.calendar = calendar
+        self.now = clock()
+    }
+
+    // MARK: - Derived values
+
+    public var plannedSecondsForNext: Int {
+        if nextKind == .focus, let override = nextFocusSecondsOverride { return override }
+        return settings().plannedSeconds(for: nextKind)
+    }
+
+    /// Whole seconds left, rounded up. When idle, the length of the next session.
+    public var remainingSeconds: Int {
+        guard let active else { return plannedSecondsForNext }
+        let left = TimeInterval(active.plannedSeconds) - active.activeSeconds(at: now)
+        return max(0, Int(left.rounded(.up)))
+    }
+
+    /// 0...1 through the active session; 0 when idle.
+    public var progress: Double {
+        guard let active, active.plannedSeconds > 0 else { return 0 }
+        return min(1, active.activeSeconds(at: now) / TimeInterval(active.plannedSeconds))
+    }
+
+    /// Focus time stored for today plus the running focus session.
+    public func todayFocusSeconds() -> Int {
+        let day = calendar.startOfDay(for: now)
+        let stored: Int
+        if let cache = todayCache, cache.day == day {
+            stored = cache.seconds
+        } else {
+            let interval = calendar.dateInterval(of: .day, for: now)!
+            stored = sessions.sessions(in: interval)
+                .filter { $0.kind == .focus }
+                .reduce(0) { $0 + $1.activeSeconds }
+            todayCache = (day, stored)
+        }
+        guard let active, active.kind == .focus, calendar.startOfDay(for: active.startedAt) == day else {
+            return stored
+        }
+        return stored + Int(active.activeSeconds(at: now).rounded(.down))
+    }
+
+    // MARK: - Actions
+
+    public func start() {
+        refreshNow()
+        guard status == .idle else { return }
+        let planned = plannedSecondsForNext
+        if nextKind == .focus { nextFocusSecondsOverride = nil }
+        active = ActiveSession(kind: nextKind, startedAt: now, plannedSeconds: planned, lastResumedAt: now)
+        status = .running
+        needsAttention = false
+    }
+
+    public func pause() {
+        refreshNow()
+        guard status == .running, var session = active else { return }
+        session.accumulatedSeconds = session.activeSeconds(at: now)
+        session.lastResumedAt = nil
+        active = session
+        status = .paused
+    }
+
+    public func resume() {
+        refreshNow()
+        guard status == .paused, var session = active else { return }
+        session.lastResumedAt = now
+        active = session
+        status = .running
+    }
+
+    public func endEarly() {
+        refreshNow()
+        guard status != .idle, let session = active else { return }
+        finish(session, outcome: .endedEarly, at: now)
+    }
+
+    public func cancel() {
+        refreshNow()
+        guard status != .idle else { return }
+        active = nil
+        status = .idle
+    }
+
+    public func skipBreak() {}
+
+    public func acknowledge() {
+        needsAttention = false
+    }
+
+    public func tick() {
+        refreshNow()
+        guard status == .running, let session = active, let endsAt = session.endsAt, now >= endsAt else { return }
+        finish(session, outcome: .completed, at: endsAt)
+    }
+
+    public func systemWillSleep() {}
+
+    public func prepareForQuit() {}
+
+    // MARK: - Internals
+
+    private func refreshNow() {
+        now = clock()
+    }
+
+    /// Ends `session` at `end`, logging it unless it is a focus session ended
+    /// before the one-minute minimum.
+    private func finish(_ session: ActiveSession, outcome: Outcome, at end: Date) {
+        let activeSeconds = min(session.plannedSeconds, Int(session.activeSeconds(at: end).rounded()))
+        active = nil
+        status = .idle
+
+        let tooShort = session.kind == .focus && outcome == .endedEarly
+            && activeSeconds < Self.minimumLoggedFocusSeconds
+        if tooShort { return }
+
+        sessions.save(SessionRecord(
+            id: session.id, kind: session.kind, startedAt: session.startedAt, endedAt: end,
+            plannedSeconds: session.plannedSeconds, activeSeconds: activeSeconds,
+            outcome: outcome, origin: .manual))
+        todayCache = nil
+        savedSessionCount += 1
+
+        if outcome == .completed {
+            needsAttention = true
+            onFinish?(session.kind)
+        }
+    }
+}
