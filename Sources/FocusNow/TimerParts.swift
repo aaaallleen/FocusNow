@@ -171,6 +171,7 @@ struct TimerRing: View {
                 .accessibilityIdentifier(Self.digitsIdentifier)
         } else {
             clockText
+                .accessibilityIdentifier(Self.digitsIdentifier) // the self-check measures them
         }
     }
 
@@ -195,7 +196,7 @@ struct TimerRing: View {
         engine.setNextFocus(minutes: minutes)
     }
 
-    /// Finds the clickable digits (the self-check presses them by this).
+    /// Finds the digits (the self-check presses and measures them by this).
     static let digitsIdentifier = "next-session-length"
 }
 

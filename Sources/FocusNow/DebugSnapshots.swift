@@ -125,6 +125,16 @@ final class DebugSnapshots {
         return found
     }
 
+    /// The screen frame of the element with this accessibility label, title or identifier.
+    func accessibilityFrame(of label: String, in window: NSWindow) -> NSRect? {
+        let element = accessibilityElements(in: window).first {
+            Self.attribute($0, "accessibilityLabel") as? String == label
+                || Self.attribute($0, "accessibilityTitle") as? String == label
+                || Self.attribute($0, "accessibilityIdentifier") as? String == label
+        }
+        return element.flatMap { (Self.attribute($0, "accessibilityFrame") as? NSValue)?.rectValue }
+    }
+
     /// Does what a click on row `index` of the first list in `window` (a
     /// sidebar) does: focuses the list and selects the row. A posted click
     /// can't: macOS usually refuses to make the app active during a run, and a
@@ -164,12 +174,7 @@ final class DebugSnapshots {
     /// identifier, found through the accessibility tree. Returns whether the
     /// control was found.
     func press(accessibilityLabel label: String, in window: NSWindow) async -> Bool {
-        let element = accessibilityElements(in: window).first {
-            Self.attribute($0, "accessibilityLabel") as? String == label
-                || Self.attribute($0, "accessibilityTitle") as? String == label
-                || Self.attribute($0, "accessibilityIdentifier") as? String == label
-        }
-        guard let element, let frame = (Self.attribute(element, "accessibilityFrame") as? NSValue)?.rectValue else {
+        guard let frame = accessibilityFrame(of: label, in: window) else {
             note("no control labelled \"\(label)\"")
             return false
         }

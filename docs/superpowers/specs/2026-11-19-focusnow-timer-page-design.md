@@ -35,6 +35,8 @@ Opening FocusNow from Spotlight or the Dock only shows stats today; the timer li
 
 ### Timer page, no session running
 
+> Superseded by `2026-11-19-focusnow-settings-tab-design.md`: the configuration moved to Settings → Cycle, and the Timer page keeps the session layout at all times.
+
 ```
                     [ Timer | Stats ]
   ┌───────────────────────────────┬────────────────────────┐

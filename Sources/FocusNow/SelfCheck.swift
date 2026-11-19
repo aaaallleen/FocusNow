@@ -394,11 +394,12 @@ extension AppDelegate {
             await snap.wait(0.1)
             snap.capture(frameView, as: name, scale: 1)
         }
-        snap.note("launch page=\(mainState.page) mainVisible=\(windows.isMainVisible) fields=\(fields()) " +
+        /// The digits' height: their font is sized from the ring, so it follows the ring's size.
+        func ring() -> Int { Int(snap.accessibilityFrame(of: TimerRing.digitsIdentifier, in: window)?.height ?? -1) }
+        snap.note("launch page=\(mainState.page) mainVisible=\(windows.isMainVisible) fields=\(fields()) (want 0) " +
             "toolbarItems=\(window.toolbar?.items.count ?? 0) policy=\(policyName)")
         snap.note("window place saved as \"\(window.frameAutosaveName)\" (want \"\" while testing)")
-        // What VoiceOver reads: the digits read the time, and every field and
-        // pair of arrows says which setting it changes.
+        // What VoiceOver reads: the digits read the time, then the controls.
         for line in snap.spoken(roles: ["AXButton", "AXTextField", "AXIncrementor"], in: window) {
             snap.note("voiceover: \(line)")
         }
@@ -408,31 +409,11 @@ extension AppDelegate {
         await shot("timer-idle-dark")
         window.appearance = nil
 
-        // The configuration column edits the defaults for every session.
-        await snap.type("30", intoField: 0, of: window)
-        await snap.pressKey(36, characters: "\r", in: window)
-        snap.note("focus field → settings=\(settings.settings.focusMinutes) remaining=\(engine.remainingSeconds)")
-        settings.settings.focusMinutes = 40
-        await snap.type("6 sessions", intoField: 3, of: window)
-        await snap.pressKey(36, characters: "\r", in: window)
-        snap.note("after field → \(settings.settings.sessionsBeforeLongBreak) phase=\"\(engine.phaseLabel)\"")
-        // A change made elsewhere (the stepper, Settings) while a field still has
-        // focus must survive the field losing focus.
-        settings.settings.sessionsBeforeLongBreak = 4
-        await snap.wait(0.2)
-        window.makeFirstResponder(nil)
-        await snap.wait(0.3)
-        snap.note("defaults kept after blur: focus=\(settings.settings.focusMinutes) after=\(settings.settings.sessionsBeforeLongBreak)")
-        // Focus changed and changed back before the next tick still drops a one-off.
-        engine.setNextFocus(minutes: 50)
-        settings.settings.focusMinutes = 30
-        settings.settings.focusMinutes = 40
-        snap.note("one-off after focus 30 and back: \(engine.nextFocusSecondsOverride.map(String.init) ?? "none") (want none)")
-
-        // A session hides the configuration; the timer fills the window.
+        // One layout: the ring keeps its size when a session starts.
+        let idleRing = ring()
         engine.start()
         await snap.wait(0.6)
-        snap.note("running fields=\(fields()) inSession=\(engine.isInSession)")
+        snap.note("running fields=\(fields()) inSession=\(engine.isInSession) ring idle=\(idleRing) running=\(ring()) (want 0 true, equal)")
         await shot("timer-running")
         engine.pause()
         await snap.wait(0.4)
@@ -445,24 +426,20 @@ extension AppDelegate {
 
         // ⌘2 and ⌘1 through the real menu.
         for (key, code) in [("2", UInt16(19)), ("1", UInt16(18))] {
-            if let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: .command,
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false, keyCode: code) {
-                let handled = NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
-                await snap.wait(0.4)
-                snap.note("⌘\(key) handled=\(handled) page=\(mainState.page)")
-                if key == "2" { await shot("stats-page") }
-            }
+            let handled = await command(key, code, in: window)
+            snap.note("⌘\(key) handled=\(handled) page=\(mainState.page)")
+            if key == "2" { await shot("stats-page") }
         }
 
         // Window extremes.
         window.setContentSize(NSSize(width: 640, height: 480))
         await snap.wait(0.5)
+        let idleMinRing = ring()
         snap.note("min size fields=\(fields()) content=\(window.contentView?.bounds.size ?? .zero)")
         await shot("timer-idle-min")
         engine.start()
         await snap.wait(0.6)
+        snap.note("min size ring idle=\(idleMinRing) running=\(ring()) (want equal)")
         await shot("timer-running-min")
         engine.cancel()
         window.setContentSize(NSSize(width: 1400, height: 900))
@@ -587,47 +564,15 @@ extension AppDelegate {
             window.makeFirstResponder(nil)
             await snap.wait(0.6)
         }
-        func command(_ key: String, _ code: UInt16) async {
-            if let event = NSEvent.keyEvent(
-                with: .keyDown, location: .zero, modifierFlags: .command,
-                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-                context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false, keyCode: code) {
-                _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
-            }
-            await snap.wait(0.4)
-        }
 
         // Typing, then clicking a control on the same page: what was typed applies first.
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Start focus", in: window)
         snap.note("digits 25 then Start → planned=\(planned())")
         await reset()
-        await snap.type("25", intoField: 0, of: window)
-        _ = await snap.press(accessibilityLabel: "Start focus", in: window)
-        snap.note("focus field 25 then Start → planned=\(planned()) focus=\(settings.settings.focusMinutes)")
-        await reset()
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Five minutes longer", in: window)
         snap.note("digits 25 then + → remaining=\(engine.remainingSeconds)")
-        await reset()
-
-        await snap.type("25", intoField: 0, of: window)
-        await snap.clickStepper(0, up: true, in: window)
-        window.makeFirstResponder(nil)
-        await snap.wait(0.3)
-        snap.note("focus field 25 then stepper up → focus=\(settings.settings.focusMinutes)")
-        await reset()
-
-        // The configuration going away mid-edit keeps what was typed.
-        await snap.type("30", intoField: 0, of: window)
-        engine.start() // as the popover's Start does
-        await snap.wait(0.6)
-        snap.note("focus field 30 then popover Start → focus=\(settings.settings.focusMinutes) planned=\(planned())")
-        await reset()
-        await snap.type("35", intoField: 0, of: window)
-        await command("2", 19)
-        snap.note("focus field 35 then ⌘2 → focus=\(settings.settings.focusMinutes) page=\(mainState.page)")
-        await command("1", 18)
         await reset()
 
         // A finish opens the popover; answering in the window closes it.
