@@ -213,37 +213,147 @@ extension AppDelegate {
             NSApp.sendAction(action, to: item.target, from: item)
         }
         await snap.wait(0.6)
-        snap.note("after ⌘,: settingsVisible=\(windows.isSettingsVisible) policy=\(policyName)")
-        if let view = windows.settingsContentView { snap.capture(view, as: "settings-live", scale: 1) }
+        snap.note("after ⌘,: mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
+            "section=\(mainState.settingsSection) policy=\(policyName)")
 
+        engine.cancel()
         engine.skipBreak() // the stats phase may have left a break pending
+
+        guard let window = windows.mainWindow, let frameView = window.contentView?.superview else {
+            snap.note("no main window")
+            return
+        }
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.4)
+        func shot(_ name: String) async {
+            await snap.wait(0.1)
+            snap.capture(frameView, as: name, scale: 1)
+        }
+        func fields() -> Int { snap.textFields(in: window).count }
+        func show(_ section: SettingsSection) async {
+            await snap.selectRow(SettingsSection.allCases.firstIndex(of: section) ?? 0, in: window)
+        }
+        func focus() -> Int { settings.settings.focusMinutes }
+        window.appearance = NSAppearance(named: .aqua)
+        await shot("settings-cycle")
+        window.appearance = NSAppearance(named: .darkAqua)
+        await shot("settings-cycle-dark")
+        window.appearance = nil
+        for line in snap.spoken(roles: ["AXTextField", "AXIncrementor"], in: window) {
+            snap.note("voiceover: \(line)")
+        }
+
+        // The Cycle pane edits the defaults for every session.
+        await snap.type("30", intoField: 0, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("focus field → settings=\(focus()) remaining=\(engine.remainingSeconds)")
+        settings.settings.focusMinutes = 40
+        await snap.type("6 sessions", intoField: 3, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("after field → \(settings.settings.sessionsBeforeLongBreak) phase=\"\(engine.phaseLabel)\"")
+        // A change made elsewhere (the stepper, the popover) while a field still
+        // has focus must survive the field losing focus.
+        settings.settings.sessionsBeforeLongBreak = 4
+        await snap.wait(0.2)
+        window.makeFirstResponder(nil)
+        await snap.wait(0.3)
+        snap.note("defaults kept after blur: focus=\(focus()) after=\(settings.settings.sessionsBeforeLongBreak)")
+        // Focus changed and changed back before the next tick still drops a one-off.
+        engine.setNextFocus(minutes: 50)
+        settings.settings.focusMinutes = 30
+        settings.settings.focusMinutes = 40
+        snap.note("one-off after focus 30 and back: \(engine.nextFocusSecondsOverride.map(String.init) ?? "none") (want none)")
+
+        // During a session the lengths stay editable and apply from the next one.
+        engine.start()
+        await snap.wait(0.3)
+        await snap.type("35", intoField: 0, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("during a session: planned=\(engine.active?.plannedSeconds ?? -1) focus=\(focus()) (want 2400 35)")
+        engine.cancel()
+        await snap.wait(0.3)
+        snap.note("idle after: remaining=\(engine.remainingSeconds) (want 2100)")
+        settings.settings.focusMinutes = 40
+        window.makeFirstResponder(nil)
+
+        // The sidebar picks the pane.
+        await show(.goal)
+        snap.note("section=\(mainState.settingsSection) fields=\(fields()) (want goal 1)")
+        await shot("settings-goal")
 
         // Typing the goal: Return commits, nonsense and Escape put the old value
         // back, and leaving the field commits.
-        if let window = NSApp.windows.first(where: { $0.title == "Settings" }) {
-            func goal() -> String { TimeFormat.duration(settings.settings.dailyGoalSeconds) }
-            snap.note("settings fields=\(snap.textFields(in: window).count)")
-            await snap.type("3h 30m", intoField: 0, of: window)
-            await snap.pressKey(36, characters: "\r", in: window)
-            snap.note("typed 3h 30m → \(goal())")
-            let rejectedBefore = InputFeedback.rejections
-            await snap.type("abc", intoField: 0, of: window)
-            await snap.pressKey(36, characters: "\r", in: window)
-            snap.note("typed abc → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
-            await snap.type("", intoField: 0, of: window)
-            await snap.pressKey(51, characters: "\u{7f}", in: window) // Delete
-            await snap.pressKey(36, characters: "\r", in: window)
-            snap.note("cleared → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
-            await snap.type("5h", intoField: 0, of: window)
-            await snap.pressKey(53, characters: "\u{1b}", in: window)
-            snap.note("escape → \(goal())")
-            await snap.type("2h", intoField: 0, of: window)
-            window.makeFirstResponder(nil)
-            await snap.wait(0.3)
-            snap.note("left field → \(goal())")
-        } else {
-            snap.note("no Settings window")
+        func goal() -> String { TimeFormat.duration(settings.settings.dailyGoalSeconds) }
+        await snap.type("3h 30m", intoField: 0, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("typed 3h 30m → \(goal())")
+        let rejectedBefore = InputFeedback.rejections
+        await snap.type("abc", intoField: 0, of: window)
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("typed abc → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
+        await snap.type("", intoField: 0, of: window)
+        await snap.pressKey(51, characters: "\u{7f}", in: window) // Delete
+        await snap.pressKey(36, characters: "\r", in: window)
+        snap.note("cleared → \(goal()) beeped=\(InputFeedback.rejections - rejectedBefore) (want 1)")
+        await snap.type("5h", intoField: 0, of: window)
+        await snap.pressKey(53, characters: "\u{1b}", in: window)
+        snap.note("escape → \(goal())")
+        await snap.type("2h", intoField: 0, of: window)
+        window.makeFirstResponder(nil)
+        await snap.wait(0.3)
+        snap.note("left field → \(goal())")
+
+        await show(.general)
+        let toggles = snap.spoken(roles: ["AXCheckBox", "AXSwitch"], in: window)
+        snap.note("section=\(mainState.settingsSection) toggles=\(toggles.count) (want general 2)")
+        for line in toggles { snap.note("voiceover: \(line)") }
+        await shot("settings-general")
+
+        // Typed text not yet committed survives leaving the pane, the tab or the window.
+        await show(.cycle)
+        await snap.type("33", intoField: 0, of: window)
+        await show(.general)
+        snap.note("focus 33 then General → \(focus()) (want 33)")
+        await show(.cycle)
+        await snap.type("34", intoField: 0, of: window)
+        let toTimer = await command("1", 18, in: window)
+        snap.note("focus 34 then ⌘1 → \(focus()) handled=\(toTimer) page=\(mainState.page) (want 34 true timer)")
+        showSettings()
+        await snap.wait(0.5)
+        await snap.type("36", intoField: 0, of: window)
+        window.performClose(nil)
+        await snap.wait(0.5)
+        snap.note("focus 36 then close → \(focus()) mainVisible=\(windows.isMainVisible) (want 36 false)")
+        settings.settings.focusMinutes = 40
+
+        // The other ways in: ⌘3, and the popover's Settings button.
+        showTimer()
+        await snap.wait(0.5)
+        let toSettings = await command("3", 20, in: window)
+        snap.note("⌘3 handled=\(toSettings) page=\(mainState.page)")
+        await show(.goal) // remembered while the app runs
+        closeAllWindows()
+        await snap.wait(0.4)
+        mainState.page = .timer
+        statusItem.showPopover(fromClick: true)
+        await snap.wait(0.5)
+        if let popover = statusItem.popoverWindow {
+            _ = await snap.press(accessibilityLabel: "Settings", in: popover)
         }
+        await snap.wait(0.6)
+        snap.note("popover Settings: popoverVisible=\(statusItem.popoverWindowVisible) mainVisible=\(windows.isMainVisible) " +
+            "page=\(mainState.page) section=\(mainState.settingsSection) policy=\(policyName) (want false true settings goal)")
+
+        // The smallest window still shows every row of the Cycle pane.
+        await show(.cycle)
+        window.setContentSize(NSSize(width: 640, height: 480))
+        await snap.wait(0.4)
+        let content = window.contentView?.bounds ?? .zero
+        let inside = snap.textFields(in: window).allSatisfy { content.contains($0.convert($0.bounds, to: nil)) }
+        snap.note("min size: fields=\(fields()) all inside=\(inside) (want 4 true)")
+        await shot("settings-cycle-min")
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.3)
 
         // A new goal applies from today and leaves past days alone.
         statsModel.range = .month
@@ -257,8 +367,8 @@ extension AppDelegate {
         // Sound off silences the finish sound.
         settings.settings.soundOn = false
         snap.note("sound off: finish would play sound=\(alerter.sessionFinished(.focus))")
-        await snap.wait(0.3)
-        if let view = windows.settingsContentView { snap.capture(view, as: "settings-after-changes", scale: 1) }
+        await show(.general)
+        await shot("settings-after-changes")
 
         closeAllWindows()
         await snap.wait(0.4)
@@ -530,6 +640,18 @@ extension AppDelegate {
         snap.note("Start break in window → popoverVisible=\(statusItem.popoverWindowVisible) status=\(engine.status) phase=\"\(engine.phaseLabel)\"")
         engine.skipBreak()
         await snap.wait(1.0)
+    }
+
+    /// A ⌘-key shortcut through the real menu; returns whether the menu took it.
+    private func command(_ key: String, _ code: UInt16, in window: NSWindow) async -> Bool {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command,
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false, keyCode: code)
+        else { return false }
+        let handled = NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
+        try? await Task.sleep(for: .seconds(0.4))
+        return handled
     }
 
     private func closeAllWindows() {

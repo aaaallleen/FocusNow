@@ -68,7 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     state: mainState, engine: engine, settings: settings, statsModel: statsModel,
                     onAction: { control in self?.windowTimerWasUsed(control) }))
             },
-            makeSettings: { AnyView(SettingsView(settings: settings)) },
             savesWindowPlace: Self.testDataDir == nil)
         NSApp.mainMenu = makeMainMenu()
         reloadStatsWhenSessionsChange()
@@ -123,6 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         timerItem.target = self
         let statsItem = windowMenu.addItem(withTitle: "Stats", action: #selector(openStats), keyEquivalent: "2")
         statsItem.target = self
+        let settingsPageItem = windowMenu.addItem(withTitle: "Settings", action: #selector(openSettings), keyEquivalent: "3")
+        settingsPageItem.target = self
         main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windowMenu
         NSApp.windowsMenu = windowMenu
 
@@ -206,9 +207,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windows.showMain()
     }
 
+    /// ⌘,, ⌘3 and the popover's Settings button: the main window's Settings page.
     func showSettings() {
         statusItem.closePopover()
-        windows.showSettings()
+        mainState.page = .settings
+        windows.showMain()
     }
 
     // MARK: - Storage

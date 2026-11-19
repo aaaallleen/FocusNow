@@ -125,6 +125,23 @@ final class DebugSnapshots {
         return found
     }
 
+    /// Does what a click on row `index` of the first list in `window` (a
+    /// sidebar) does: focuses the list and selects the row. A posted click
+    /// can't: macOS usually refuses to make the app active during a run, and a
+    /// list in a window that isn't key ignores clicks.
+    func selectRow(_ index: Int, in window: NSWindow) async {
+        func walk(_ view: NSView) -> NSTableView? {
+            (view as? NSTableView) ?? view.subviews.lazy.compactMap(walk).first
+        }
+        guard let list = window.contentView.flatMap(walk), index < list.numberOfRows else {
+            note("no list row \(index)")
+            return
+        }
+        window.makeFirstResponder(list)
+        list.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        await wait(0.4)
+    }
+
     /// What VoiceOver announces for the elements with these roles: `role "label"`,
     /// plus the hint when there is one.
     func spoken(roles: Set<String>, in window: NSWindow) -> [String] {
@@ -133,7 +150,11 @@ final class DebugSnapshots {
             // A stepper's own arrows: VoiceOver reads them as part of the stepper.
             let subrole = Self.attribute(element, "accessibilitySubrole") as? String
             if subrole == "AXIncrementArrow" || subrole == "AXDecrementArrow" { return nil }
-            let label = Self.attribute(element, "accessibilityLabel") as? String ?? ""
+            // A switch in a form is named by the text beside it, linked as its title element.
+            let titleElement = Self.attribute(element, "accessibilityTitleUIElement") as? NSObject
+            let label = [Self.attribute(element, "accessibilityLabel"), Self.attribute(element, "accessibilityTitle"),
+                         titleElement.flatMap { Self.attribute($0, "accessibilityValue") }]
+                .compactMap { $0 as? String }.first { !$0.isEmpty } ?? ""
             let help = Self.attribute(element, "accessibilityHelp") as? String
             return "\(role) \"\(label)\"" + (help.map { " hint=\"\($0)\"" } ?? "")
         }

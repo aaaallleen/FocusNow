@@ -1,16 +1,19 @@
 import FocusNowCore
 import SwiftUI
 
-enum MainPage: Hashable { case timer, stats }
+enum MainPage: Hashable { case timer, stats, settings }
 
-/// Which page the main window shows; the app sets it before showing the window.
+/// Which page the main window shows, and which Settings section; the app sets
+/// the page before showing the window. The section is kept while the app runs.
 @MainActor @Observable
 final class MainWindowState {
     var page: MainPage = .timer
+    var settingsSection: SettingsSection = .cycle
 }
 
-/// The app window: Timer and Stats pages, switched from the toolbar (or ⌘1 / ⌘2).
-/// Switching isn't animated: it's frequent and often keyboard-driven.
+/// The app window: Timer, Stats and Settings pages, switched from the toolbar
+/// (or ⌘1 / ⌘2 / ⌘3). Switching isn't animated: it's frequent and often
+/// keyboard-driven.
 struct MainWindowView: View {
     @Bindable var state: MainWindowState
     let engine: TimerEngine
@@ -23,6 +26,7 @@ struct MainWindowView: View {
             switch state.page {
             case .timer: TimerPageView(engine: engine, settings: settings, onAction: onAction)
             case .stats: StatsView(model: statsModel)
+            case .settings: SettingsView(settings: settings, state: state)
             }
         }
         .frame(minWidth: 640, minHeight: 480)
@@ -32,6 +36,7 @@ struct MainWindowView: View {
                 Picker("Page", selection: $state.page) {
                     Text("Timer").tag(MainPage.timer)
                     Text("Stats").tag(MainPage.stats)
+                    Text("Settings").tag(MainPage.settings)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
