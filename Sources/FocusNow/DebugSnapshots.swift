@@ -8,8 +8,9 @@ import SwiftUI
 /// so it needs no screen-recording permission. Never active in normal use.
 @MainActor
 final class DebugSnapshots {
+    /// Only with a separate data folder too, so it never touches real history.
     static var directory: URL? {
-        ProcessInfo.processInfo.environment["FOCUSNOW_SNAPSHOT_DIR"].map { URL(fileURLWithPath: $0) }
+        SelfCheckGate.directory(in: ProcessInfo.processInfo.environment)
     }
 
     private let dir: URL

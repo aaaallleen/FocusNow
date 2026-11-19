@@ -22,6 +22,9 @@ public final class StatsViewModel {
     @ObservationIgnored private let calc: StatsCalculator
     /// A date inside the period being shown.
     @ObservationIgnored private var anchor: Date
+    /// True while showing the period containing now; then each reload moves
+    /// with the clock (a new day or week). Paging back stops following.
+    @ObservationIgnored private var followsNow = true
     @ObservationIgnored private var intervalSessions: [SessionRecord] = []
 
     private var currentRange: StatsRange = .week
@@ -55,6 +58,7 @@ public final class StatsViewModel {
         set {
             currentRange = newValue
             anchor = clock()
+            followsNow = true
             currentSelection = nil
             reload()
         }
@@ -77,6 +81,7 @@ public final class StatsViewModel {
         guard canPageBack, let component = pageComponent,
               let earlier = calendar.date(byAdding: component, value: -1, to: interval.start) else { return }
         anchor = earlier
+        followsNow = false
         currentSelection = nil
         reload()
     }
@@ -86,6 +91,7 @@ public final class StatsViewModel {
         anchor = interval.end
         currentSelection = nil
         reload()
+        if interval.start <= clock() && clock() < interval.end { followsNow = true }
     }
 
     /// Re-reads the store and the clock. Call when the window appears and after a session is saved.
@@ -101,7 +107,10 @@ public final class StatsViewModel {
         }
         tiles = newTiles
 
-        interval = calc.interval(for: currentRange, containing: anchor, earliest: earliest)
+        if followsNow { anchor = now }
+        let newInterval = calc.interval(for: currentRange, containing: anchor, earliest: earliest)
+        if newInterval != interval { currentSelection = nil }
+        interval = newInterval
         intervalSessions = store.sessions(in: interval)
         buckets = calc.buckets(for: currentRange, interval: interval, sessions: intervalSessions, goal: goal)
         summary = calc.summary(interval: interval, sessions: intervalSessions, today: now, goal: goal)

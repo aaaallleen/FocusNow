@@ -114,6 +114,37 @@ struct StatsViewModelTests {
         #expect(model.listedSessions.count == 3)
     }
 
+    @Test func reloadFollowsTheClockIntoANewWeek() {
+        clock.advance(7 * 86_400) // Thu 2026-11-26
+        model.reload()
+        #expect(model.interval.start == date("2026-11-23T00:00:00Z"))
+        #expect(!model.canPageForward)
+        #expect(model.listInterval.start == date("2026-11-26T00:00:00Z"))
+    }
+
+    @Test func theDayRangeFollowsMidnight() {
+        model.range = .day
+        clock.advance(86_400)
+        model.reload()
+        #expect(model.interval.start == date("2026-11-20T00:00:00Z"))
+        #expect(model.listInterval.start == date("2026-11-20T00:00:00Z"))
+    }
+
+    @Test func aPagedBackViewStaysWhereItIs() {
+        model.pageBack()
+        clock.advance(86_400)
+        model.reload()
+        #expect(model.interval.start == date("2026-11-09T00:00:00Z"))
+    }
+
+    @Test func pagingForwardToTheCurrentPeriodFollowsNowAgain() {
+        model.pageBack()
+        model.pageForward()
+        clock.advance(7 * 86_400)
+        model.reload()
+        #expect(model.interval.start == date("2026-11-23T00:00:00Z"))
+    }
+
     @Test func reloadFollowsTheClockIntoANewDay() {
         clock.advance(86_400) // Friday
         model.reload()

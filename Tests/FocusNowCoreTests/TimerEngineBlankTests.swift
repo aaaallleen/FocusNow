@@ -47,6 +47,48 @@ struct TimerEngineBlankTests {
         #expect(h.sessions.records.isEmpty)
     }
 
+    @Test func aGapBeforeALateSleepNoticeIsBlank() throws {
+        e.start(); h.run(180)
+        h.clock.advance(7200)
+        e.systemWillSleep()
+        #expect(e.status == .paused)
+        #expect(e.remainingSeconds == 2220)
+        e.resume(); h.run(2220)
+        #expect(try #require(h.sessions.records.first).activeSeconds == 2400)
+        #expect(h.sessions.records.first?.endedAt == date("2026-11-19T11:40:00Z"))
+    }
+
+    @Test func aGapBeforeEndEarlyIsBlank() {
+        e.start(); h.run(180)
+        h.clock.advance(1200)
+        e.endEarly()
+        #expect(h.sessions.records.first?.activeSeconds == 180)
+    }
+
+    @Test func aGapBeforeQuitIsBlank() {
+        e.start(); h.run(180)
+        h.clock.advance(1200)
+        e.prepareForQuit()
+        #expect(h.sessions.records.first?.activeSeconds == 180)
+    }
+
+    @Test func aGapBeforePauseIsBlank() {
+        e.start(); h.run(180)
+        h.clock.advance(1200)
+        e.pause()
+        #expect(e.status == .paused)
+        #expect(e.remainingSeconds == 2220)
+    }
+
+    @Test func aGapBeforeSkippingABreakIsBlank() {
+        e.start(); h.run(2400)
+        e.start(); h.run(60)
+        h.clock.advance(1200)
+        e.skipBreak()
+        #expect(h.sessions.records.last?.kind == .shortBreak)
+        #expect(h.sessions.records.last?.activeSeconds == 60)
+    }
+
     @Test func sleepWhilePausedOrIdleChangesNothing() {
         e.systemWillSleep()
         #expect(e.status == .idle)

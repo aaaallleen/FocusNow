@@ -186,6 +186,30 @@ struct TimerEngineCycleTests {
         #expect(e.remainingSeconds == 2400)
     }
 
+    @Test func aBreakEarnedJustBeforeMidnightSurvivesIt() {
+        let h = makeEngine(at: "2026-11-19T23:19:50Z")
+        h.engine.start(); h.run(2400) // finishes 23:59:50
+        h.run(30)                     // 00:00:20, still flashing
+        #expect(h.engine.nextKind == .shortBreak)
+        #expect(h.engine.cyclePosition == 1)
+        #expect(h.engine.controls == [.startBreak, .skipBreak])
+        h.engine.acknowledge()
+        h.run(30)
+        #expect(h.engine.nextKind == .shortBreak)
+        h.engine.start()
+        #expect(h.engine.active?.kind == .shortBreak)
+    }
+
+    @Test func aFinishLeftOvernightStartsAFreshCycle() {
+        let h = makeEngine(at: "2026-11-19T23:19:50Z")
+        h.engine.start(); h.run(2400) // finishes 23:59:50
+        h.clock.advance(2 * 3600)
+        h.engine.tick()
+        #expect(h.engine.nextKind == .focus)
+        #expect(h.engine.cyclePosition == 0)
+        #expect(!h.engine.needsAttention)
+    }
+
     @Test func aSessionRunningAcrossMidnightIsNotInterrupted() {
         let h = makeEngine(at: "2026-11-19T23:50:00Z")
         h.engine.start(); h.run(2400)

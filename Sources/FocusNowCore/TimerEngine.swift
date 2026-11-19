@@ -12,6 +12,9 @@ public final class TimerEngine {
     public static let blankGapSeconds: TimeInterval = 30
     /// How often a running session is checkpointed for crash recovery.
     public static let snapshotIntervalSeconds: TimeInterval = 15
+    /// A new day starts a fresh cycle, unless the last session ended less than this long ago
+    /// (so a break earned just before midnight survives it).
+    public static let dayRolloverGraceSeconds: TimeInterval = 3600
 
     @ObservationIgnored private let settings: () -> TimerSettings
     @ObservationIgnored private let sessions: SessionStore
@@ -42,6 +45,7 @@ public final class TimerEngine {
     /// When the engine last heard from the app (a tick or an action).
     @ObservationIgnored private var lastSeen: Date
     @ObservationIgnored private var lastSnapshotAt: Date?
+    @ObservationIgnored private var lastFinishAt: Date?
 
     public init(
         settings: @escaping () -> TimerSettings, sessions: SessionStore,
@@ -163,18 +167,12 @@ public final class TimerEngine {
     }
 
     public func tick() {
-        let previous = lastSeen
-        refreshNow()
+        let hadGap = refreshNow()
         if status == .idle {
             rollOverDayIfNeeded()
             return
         }
-        guard status == .running, let session = active else { return }
-        if now.timeIntervalSince(previous) > Self.blankGapSeconds {
-            // The app wasn't running for a while (forced sleep, a stall): that gap is blank.
-            pause(asOf: previous)
-            return
-        }
+        guard !hadGap, status == .running, let session = active else { return }
         if let endsAt = session.endsAt, now >= endsAt {
             finish(session, outcome: .completed, at: endsAt)
         } else if lastSnapshotAt.map({ now.timeIntervalSince($0) >= Self.snapshotIntervalSeconds }) ?? true {
@@ -199,9 +197,19 @@ public final class TimerEngine {
 
     // MARK: - Internals
 
-    private func refreshNow() {
+    /// Reads the clock. Every entry point calls this first, so if the engine
+    /// hasn't heard from the app for longer than the blank-gap threshold while
+    /// running (forced sleep, a stall, a late sleep notice), the session is
+    /// paused as of the last moment it was seen: the gap is blank time.
+    /// Returns whether that happened.
+    @discardableResult
+    private func refreshNow() -> Bool {
+        let previous = lastSeen
         now = clock()
         lastSeen = now
+        guard status == .running, now.timeIntervalSince(previous) > Self.blankGapSeconds else { return false }
+        pause(asOf: previous)
+        return true
     }
 
     private func pause(asOf moment: Date) {
@@ -248,13 +256,18 @@ public final class TimerEngine {
         }
     }
 
-    /// While idle on a later day than the cycle's last activity, start a fresh cycle.
+    /// While idle on a later day than the cycle's last activity, start a fresh
+    /// cycle — unless a session ended within the grace period, so a pending
+    /// break earned just before midnight isn't swept away. A stale finish alert
+    /// goes with the old cycle.
     private func rollOverDayIfNeeded() {
         let today = calendar.startOfDay(for: now)
         guard active == nil, today != cycleDay else { return }
+        if let finished = lastFinishAt, now.timeIntervalSince(finished) < Self.dayRolloverGraceSeconds { return }
         cyclePosition = 0
         nextKind = .focus
         cycleDay = today
+        needsAttention = false
     }
 
     /// Ends `session` at `end`, logging it unless it is a focus session ended
@@ -273,6 +286,7 @@ public final class TimerEngine {
 
         advanceCycle(after: session.kind)
         cycleDay = calendar.startOfDay(for: end)
+        lastFinishAt = end
         sessions.save(SessionRecord(
             id: session.id, kind: session.kind, startedAt: session.startedAt, endedAt: end,
             plannedSeconds: session.plannedSeconds, activeSeconds: activeSeconds,
