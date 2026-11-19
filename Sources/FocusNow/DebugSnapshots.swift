@@ -96,6 +96,55 @@ final class DebugSnapshots {
         await wait(0.15)
     }
 
+    /// Selects all in whatever field has focus and types `text` (no Return).
+    func typeIntoFocusedField(_ text: String, in window: NSWindow) async {
+        guard let editor = window.firstResponder as? NSText else {
+            note("no focused field (first responder: \(String(describing: window.firstResponder)))")
+            return
+        }
+        editor.selectAll(nil)
+        for character in text { sendKey(String(character), keyCode: 0, to: window) }
+        await wait(0.15)
+    }
+
+    /// Clicks the middle of the control with this accessibility label, found
+    /// through the accessibility tree (SwiftUI's own elements answer the
+    /// NSAccessibility messages but aren't NSAccessibilityProtocol in Swift,
+    /// so they're read by key). Returns whether the control was found.
+    func press(accessibilityLabel label: String, in window: NSWindow) async -> Bool {
+        func value(_ object: NSObject, _ key: String) -> Any? {
+            object.responds(to: NSSelectorFromString(key)) ? object.value(forKey: key) : nil
+        }
+        guard let root = window.contentView else { return false }
+        var queue: [NSObject] = [root]
+        var frame: NSRect?
+        var visited = 0
+        while !queue.isEmpty, visited < 5000 {
+            let element = queue.removeFirst()
+            visited += 1
+            if value(element, "accessibilityLabel") as? String == label {
+                frame = (value(element, "accessibilityFrame") as? NSValue)?.rectValue
+                break
+            }
+            queue += (value(element, "accessibilityChildren") as? [Any] ?? []).compactMap { $0 as? NSObject }
+        }
+        guard let frame else {
+            note("no control labelled \"\(label)\" (\(visited) elements)")
+            return false
+        }
+        let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let event = NSEvent.mouseEvent(
+                with: type, location: point, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                window.sendEvent(event)
+            }
+        }
+        await wait(0.3)
+        return true
+    }
+
     /// One key press: 36 is Return ("\r"), 53 is Escape ("\u{1b}").
     func pressKey(_ keyCode: UInt16, characters: String, in window: NSWindow) async {
         sendKey(characters, keyCode: keyCode, to: window)

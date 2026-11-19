@@ -48,7 +48,7 @@ struct TimerPageView: View {
     private func timerColumn(diameter: CGFloat, inSession: Bool) -> some View {
         VStack(spacing: inSession ? 22 : 16) {
             PhaseLabel(engine: engine, size: inSession ? 13 : 12)
-            TimerRing(engine: engine, diameter: diameter)
+            TimerRing(engine: engine, diameter: diameter, editable: true)
             TimerControlsRow(engine: engine, onAction: onAction)
                 .frame(maxWidth: 320)
                 .animation(.easeInOut(duration: Theme.phaseFade), value: engine.phaseKey)

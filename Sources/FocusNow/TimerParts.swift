@@ -26,14 +26,27 @@ struct PhaseLabel: View {
 
 /// The countdown ring with the digits inside. Every measurement scales with
 /// `diameter`; the popover uses 150.
+///
+/// When `editable`, the digits can be clicked before a focus session to type
+/// the next session's length (whole minutes). Return or clicking away applies
+/// it; Escape, unreadable text, or the session starting elsewhere drops it.
 struct TimerRing: View {
     let engine: TimerEngine
     let diameter: CGFloat
+    var editable = false
+    var onBeginEditing: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var editing = false
+    @State private var draft = ""
+    @State private var initialDraft = ""
+    @State private var hovering = false
+    @FocusState private var fieldFocused: Bool
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
     private var tint: Color { Theme.color(for: engine.displayedKind) }
+    private var digitFont: Font { .system(size: diameter * 34 / 150, weight: .light) }
+    private var canEdit: Bool { editable && engine.controls.contains(.adjustLength) }
 
     /// A finished countdown stays full until the owner starts the next phase.
     private var progress: Double {
@@ -49,18 +62,74 @@ struct TimerRing: View {
                 .rotationEffect(.degrees(-90))
                 // Sweeps linearly between ticks so it reads as continuous motion.
                 .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: progress)
-            Text(TimeFormat.clock(engine.remainingSeconds))
-                .font(.system(size: diameter * 34 / 150, weight: .light))
-                .monospacedDigit()
-                .contentTransition(.identity)
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
+            digits
                 .padding(.horizontal, lineWidth * 1.5)
         }
         .frame(width: diameter, height: diameter)
         // A new session gets a fresh ring, so it never sweeps backwards.
         .id(engine.active?.id)
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
+        .onChange(of: canEdit) { _, can in
+            if !can { finishEditing(apply: false) } // a session started elsewhere
+        }
+    }
+
+    private var clockText: some View {
+        Text(TimeFormat.clock(engine.remainingSeconds))
+            .font(digitFont)
+            .monospacedDigit()
+            .contentTransition(.identity)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
+    }
+
+    @ViewBuilder private var digits: some View {
+        if editing {
+            TextField("", text: $draft)
+                .textFieldStyle(.plain)
+                .font(digitFont)
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .frame(width: diameter * 0.6)
+                .focused($fieldFocused)
+                .onSubmit { finishEditing(apply: true) }
+                .onExitCommand { finishEditing(apply: false) }
+                .onChange(of: fieldFocused) { _, focused in
+                    if !focused { finishEditing(apply: true) } // clicked away
+                }
+                .onAppear { DispatchQueue.main.async { fieldFocused = true } }
+                .accessibilityLabel("Next session's length in minutes")
+        } else if canEdit {
+            Button(action: beginEditing) { clockText }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Type the next session's length")
+                .help("Click to type a length")
+                .onHover { inside in
+                    guard inside != hovering else { return }
+                    hovering = inside
+                    if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
+                }
+                .onDisappear {
+                    if hovering { NSCursor.pop(); hovering = false }
+                }
+        } else {
+            clockText
+        }
+    }
+
+    private func beginEditing() {
+        draft = "\(engine.plannedSecondsForNext / 60)"
+        initialDraft = draft
+        editing = true
+        onBeginEditing()
+    }
+
+    private func finishEditing(apply: Bool) {
+        guard editing else { return }
+        editing = false
+        guard apply, draft != initialDraft,
+              let minutes = LengthInput.minutes(draft, in: TimerSettings.minuteRange) else { return }
+        engine.setNextFocus(minutes: minutes)
     }
 }
 

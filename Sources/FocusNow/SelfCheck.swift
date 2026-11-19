@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -16,6 +16,7 @@ extension AppDelegate {
         if phases.contains("stats") { await checkStats(snap) }
         if phases.contains("settings") { await checkSettings(snap) }
         if phases.contains("timer") { await checkTimer(snap) }
+        if phases.contains("digits") { await checkDigits(snap) }
         if phases.contains("persist") {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
@@ -257,6 +258,76 @@ extension AppDelegate {
         engine.cancel()
         window.setContentSize(NSSize(width: 760, height: 560))
         await snap.wait(0.4)
+    }
+
+    func checkDigits(_ snap: DebugSnapshots) async {
+        snap.note("== digits ==")
+        engine.cancel()
+        engine.skipBreak()
+        showTimer()
+        await snap.wait(0.6)
+        guard let window = windows.mainWindow else {
+            snap.note("no main window")
+            return
+        }
+        let label = "Type the next session's length"
+        func remaining() -> Int { engine.remainingSeconds }
+        /// Clicks the digits and types; returns whether a field took the text.
+        func edit(_ text: String, in window: NSWindow) async -> Bool {
+            guard await snap.press(accessibilityLabel: label, in: window) else { return false }
+            guard window.firstResponder is NSText else {
+                snap.note("digits did not become a field")
+                return false
+            }
+            await snap.typeIntoFocusedField(text, in: window)
+            return true
+        }
+        let ret: (UInt16, String) = (36, "\r"), esc: (UInt16, String) = (53, "\u{1b}")
+
+        // On the Timer page.
+        if await edit("25", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
+        snap.note("digits 25 → remaining=\(remaining())")
+        if await edit("abc", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
+        snap.note("digits abc → \(remaining())")
+        if await edit("50", in: window) { await snap.pressKey(esc.0, characters: esc.1, in: window) }
+        snap.note("digits escape → \(remaining())")
+
+        // A session started elsewhere (the popover) while typing drops the edit.
+        engine.setNextFocus(minutes: 40)
+        _ = await edit("35", in: window)
+        engine.start()
+        await snap.wait(0.6)
+        snap.note("start mid-edit → planned=\(engine.active?.plannedSeconds ?? -1) fields=\(snap.textFields(in: window).count)")
+        engine.cancel()
+        await snap.wait(0.6)
+
+        // The longest length fits.
+        if await edit("180", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
+        snap.note("digits 180 → \(TimeFormat.clock(remaining()))")
+        if let frameView = window.contentView?.superview { snap.capture(frameView, as: "timer-idle-180", scale: 1) }
+        snap.render(PopoverView(engine: engine, settings: settings), as: "popover-180")
+        engine.setNextFocus(minutes: 40)
+
+        // In the popover.
+        closeAllWindows()
+        await snap.wait(0.4)
+        statusItem.showPopover(fromClick: true)
+        await snap.wait(0.5)
+        guard let popover = statusItem.popoverWindow else {
+            snap.note("no popover window")
+            return
+        }
+        if await edit("35", in: popover) {
+            snap.note("popover editing active=\(NSApp.isActive) key=\(popover.isKeyWindow)")
+            await snap.pressKey(ret.0, characters: ret.1, in: popover)
+        }
+        snap.note("popover digits 35 → \(remaining())")
+        _ = await edit("20", in: popover)
+        statusItem.closePopover()
+        await snap.wait(0.5)
+        snap.note("popover closed mid-edit → \(remaining())")
+        engine.setNextFocus(minutes: 40)
+        await snap.wait(1.0) // the popover reports itself shown for a moment after closing
     }
 
     private func closeAllWindows() {

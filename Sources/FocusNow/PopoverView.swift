@@ -9,11 +9,13 @@ struct PopoverView: View {
     var onStats: () -> Void = {}
     var onSettings: () -> Void = {}
     var onQuit: () -> Void = {}
+    /// Typing into the digits needs the app active and the popover key.
+    var onBeginEditing: () -> Void = {}
 
     var body: some View {
         VStack(spacing: 14) {
             PhaseLabel(engine: engine)
-            TimerRing(engine: engine, diameter: 150)
+            TimerRing(engine: engine, diameter: 150, editable: true, onBeginEditing: onBeginEditing)
             TimerControlsRow(engine: engine, onAction: onAction)
             TodayBar(engine: engine, settings: settings)
             Divider()

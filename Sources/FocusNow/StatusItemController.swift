@@ -17,11 +17,18 @@ final class StatusItemController: NSObject {
     var popoverBehavior: NSPopover.Behavior { popover.behavior }
     var isFlashing: Bool { flashTimer != nil }
     var popoverWindowVisible: Bool { popover.contentViewController?.view.window?.isVisible ?? false }
+    var popoverWindow: NSWindow? { popover.contentViewController?.view.window }
+
+    /// Lets the popover take keystrokes (typing into the digits).
+    func makePopoverKey() {
+        popoverWindow?.makeKey()
+    }
 
     init(engine: TimerEngine) {
         self.engine = engine
         super.init()
         popover.animates = true
+        popover.delegate = self
         item.button?.target = self
         item.button?.action = #selector(clicked)
         item.button?.imagePosition = .imageLeading
@@ -44,7 +51,13 @@ final class StatusItemController: NSObject {
     }
 
     func closePopover() {
+        endEditing()
         popover.close()
+    }
+
+    /// Closing mid-edit commits what was typed, as clicking away from a field does.
+    fileprivate func endEditing() {
+        popoverWindow?.makeFirstResponder(nil)
     }
 
     /// After the owner interacts with a popover opened by a finish, it behaves
@@ -141,5 +154,12 @@ final class StatusItemController: NSObject {
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             item.button?.animator().alphaValue = flashDimmed ? 0.35 : 1
         }
+    }
+}
+
+extension StatusItemController: NSPopoverDelegate {
+    /// The popover closing by itself (a click outside) also commits a half-typed length.
+    func popoverWillClose(_ notification: Notification) {
+        endEditing()
     }
 }

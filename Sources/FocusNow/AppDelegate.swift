@@ -177,7 +177,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onStats: { [weak self] in self?.showStats() },
             onSettings: { [weak self] in self?.showSettings() },
-            onQuit: { NSApp.terminate(nil) }))
+            onQuit: { NSApp.terminate(nil) },
+            onBeginEditing: { [weak self] in
+                NSApp.activate()
+                self?.statusItem.makePopoverKey()
+            }))
         controller.sizingOptions = [.preferredContentSize]
         return controller
     }
