@@ -33,6 +33,8 @@ public final class TimerEngine {
     public private(set) var savedSessionCount = 0
 
     @ObservationIgnored private var todayCache: (day: Date, seconds: Int)?
+    /// The local day of the cycle's most recent activity; a new day starts a new cycle.
+    @ObservationIgnored private var cycleDay: Date
 
     public init(
         settings: @escaping () -> TimerSettings, sessions: SessionStore,
@@ -43,7 +45,9 @@ public final class TimerEngine {
         self.snapshots = snapshots
         self.clock = clock
         self.calendar = calendar
-        self.now = clock()
+        let launchedAt = clock()
+        self.now = launchedAt
+        self.cycleDay = calendar.startOfDay(for: launchedAt)
     }
 
     // MARK: - Derived values
@@ -90,6 +94,8 @@ public final class TimerEngine {
     public func start() {
         refreshNow()
         guard status == .idle else { return }
+        rollOverDayIfNeeded()
+        cycleDay = calendar.startOfDay(for: now)
         let planned = plannedSecondsForNext
         if nextKind == .focus { nextFocusSecondsOverride = nil }
         active = ActiveSession(kind: nextKind, startedAt: now, plannedSeconds: planned, lastResumedAt: now)
@@ -127,7 +133,19 @@ public final class TimerEngine {
         status = .idle
     }
 
-    public func skipBreak() {}
+    /// Ends a running or paused break (logging its active time), or skips a
+    /// pending break before it starts. Does nothing when focus is current or next.
+    public func skipBreak() {
+        refreshNow()
+        if let session = active {
+            guard session.kind.isBreak else { return }
+            finish(session, outcome: .endedEarly, at: now)
+        } else {
+            guard nextKind.isBreak else { return }
+            advanceCycle(after: nextKind)
+        }
+        needsAttention = false
+    }
 
     public func acknowledge() {
         needsAttention = false
@@ -135,6 +153,7 @@ public final class TimerEngine {
 
     public func tick() {
         refreshNow()
+        if status == .idle { rollOverDayIfNeeded() }
         guard status == .running, let session = active, let endsAt = session.endsAt, now >= endsAt else { return }
         finish(session, outcome: .completed, at: endsAt)
     }
@@ -149,6 +168,28 @@ public final class TimerEngine {
         now = clock()
     }
 
+    private func advanceCycle(after kind: SessionKind) {
+        switch kind {
+        case .focus:
+            cyclePosition += 1
+            nextKind = cyclePosition >= settings().sessionsBeforeLongBreak ? .longBreak : .shortBreak
+        case .shortBreak:
+            nextKind = .focus
+        case .longBreak:
+            nextKind = .focus
+            cyclePosition = 0
+        }
+    }
+
+    /// While idle on a later day than the cycle's last activity, start a fresh cycle.
+    private func rollOverDayIfNeeded() {
+        let today = calendar.startOfDay(for: now)
+        guard active == nil, today != cycleDay else { return }
+        cyclePosition = 0
+        nextKind = .focus
+        cycleDay = today
+    }
+
     /// Ends `session` at `end`, logging it unless it is a focus session ended
     /// before the one-minute minimum.
     private func finish(_ session: ActiveSession, outcome: Outcome, at end: Date) {
@@ -160,6 +201,8 @@ public final class TimerEngine {
             && activeSeconds < Self.minimumLoggedFocusSeconds
         if tooShort { return }
 
+        advanceCycle(after: session.kind)
+        cycleDay = calendar.startOfDay(for: end)
         sessions.save(SessionRecord(
             id: session.id, kind: session.kind, startedAt: session.startedAt, endedAt: end,
             plannedSeconds: session.plannedSeconds, activeSeconds: activeSeconds,
