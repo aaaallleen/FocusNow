@@ -10,18 +10,12 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Timer") {
-                minutesStepper("Focus", value: $settings.settings.focusMinutes)
-                minutesStepper("Short break", value: $settings.settings.shortBreakMinutes)
-                minutesStepper("Long break", value: $settings.settings.longBreakMinutes)
-                Stepper(value: $settings.settings.sessionsBeforeLongBreak, in: TimerSettings.sessionsRange) {
-                    row("Long break after", "\(settings.settings.sessionsBeforeLongBreak) "
-                        + (settings.settings.sessionsBeforeLongBreak == 1 ? "session" : "sessions"))
-                }
-            }
             Section("Goal") {
-                Stepper(value: $settings.settings.dailyGoalSeconds, in: TimerSettings.goalRange, step: 900) {
-                    row("Daily focus goal", TimeFormat.duration(settings.settings.dailyGoalSeconds))
+                LabeledContent("Daily focus goal") {
+                    LengthField(
+                        value: $settings.settings.dailyGoalSeconds, range: TimerSettings.goalRange,
+                        step: 900, unit: nil, parse: LengthInput.goalSeconds,
+                        format: TimeFormat.duration, fieldWidth: 72)
                 }
             }
             Section("General") {
@@ -37,20 +31,6 @@ struct SettingsView: View {
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear { refreshLoginItem() }
-    }
-
-    private func minutesStepper(_ label: String, value: Binding<Int>) -> some View {
-        Stepper(value: value, in: TimerSettings.minuteRange) {
-            row(label, "\(value.wrappedValue) min")
-        }
-    }
-
-    private func row(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label)
-            Spacer()
-            Text(value).monospacedDigit().foregroundStyle(.secondary)
-        }
     }
 
     private func setLaunchAtLogin(_ on: Bool) {

@@ -122,14 +122,29 @@ extension AppDelegate {
         snap.note("after ⌘,: settingsVisible=\(windows.isSettingsVisible) policy=\(policyName)")
         if let view = windows.settingsContentView { snap.capture(view, as: "settings-live", scale: 1) }
 
-        // Changes apply at once.
         engine.skipBreak() // the stats phase may have left a break pending
-        settings.settings.focusMinutes = 50
-        await snap.wait(0.2)
-        snap.note("focus → 50: idle popover shows \(TimeFormat.clock(engine.remainingSeconds))")
-        settings.settings.focusMinutes = 0
-        snap.note("focus → 0 is clamped to \(settings.settings.focusMinutes)")
-        settings.settings.focusMinutes = 50
+
+        // Typing the goal: Return commits, nonsense and Escape put the old value
+        // back, and leaving the field commits.
+        if let window = NSApp.windows.first(where: { $0.title == "Settings" }) {
+            func goal() -> String { TimeFormat.duration(settings.settings.dailyGoalSeconds) }
+            snap.note("settings fields=\(snap.textFields(in: window).count)")
+            await snap.type("3h 30m", intoField: 0, of: window)
+            await snap.pressKey(36, characters: "\r", in: window)
+            snap.note("typed 3h 30m → \(goal())")
+            await snap.type("abc", intoField: 0, of: window)
+            await snap.pressKey(36, characters: "\r", in: window)
+            snap.note("typed abc → \(goal())")
+            await snap.type("5h", intoField: 0, of: window)
+            await snap.pressKey(53, characters: "\u{1b}", in: window)
+            snap.note("escape → \(goal())")
+            await snap.type("2h", intoField: 0, of: window)
+            window.makeFirstResponder(nil)
+            await snap.wait(0.3)
+            snap.note("left field → \(goal())")
+        } else {
+            snap.note("no Settings window")
+        }
 
         // A new goal applies from today and leaves past days alone.
         statsModel.range = .month

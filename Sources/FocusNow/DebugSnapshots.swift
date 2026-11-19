@@ -63,6 +63,56 @@ final class DebugSnapshots {
         try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(name).png"))
     }
 
+    // MARK: - Driving text fields and keys
+
+    /// Editable text fields in `window`, top to bottom, then left to right.
+    func textFields(in window: NSWindow) -> [NSTextField] {
+        func walk(_ view: NSView) -> [NSTextField] {
+            var found: [NSTextField] = []
+            if let field = view as? NSTextField, field.isEditable, !field.isHiddenOrHasHiddenAncestor {
+                found.append(field)
+            }
+            for sub in view.subviews { found += walk(sub) }
+            return found
+        }
+        guard let root = window.contentView else { return [] }
+        return walk(root).sorted {
+            let a = $0.convert($0.bounds, to: nil), b = $1.convert($1.bounds, to: nil)
+            return a.maxY != b.maxY ? a.maxY > b.maxY : a.minX < b.minX
+        }
+    }
+
+    /// Focuses field `index`, selects its text and types `text` (no Return).
+    func type(_ text: String, intoField index: Int, of window: NSWindow) async {
+        let fields = textFields(in: window)
+        guard fields.indices.contains(index) else {
+            note("no text field \(index) (found \(fields.count))")
+            return
+        }
+        window.makeFirstResponder(fields[index])
+        await wait(0.15)
+        (window.firstResponder as? NSText)?.selectAll(nil)
+        for character in text { sendKey(String(character), keyCode: 0, to: window) }
+        await wait(0.15)
+    }
+
+    /// One key press: 36 is Return ("\r"), 53 is Escape ("\u{1b}").
+    func pressKey(_ keyCode: UInt16, characters: String, in window: NSWindow) async {
+        sendKey(characters, keyCode: keyCode, to: window)
+        await wait(0.2)
+    }
+
+    func sendKey(_ characters: String, keyCode: UInt16, modifiers: NSEvent.ModifierFlags = [], to window: NSWindow) {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            guard let event = NSEvent.keyEvent(
+                with: type, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: keyCode) else { continue }
+            window.sendEvent(event)
+        }
+    }
+
     func wait(_ seconds: Double) async {
         try? await Task.sleep(for: .seconds(seconds))
     }
