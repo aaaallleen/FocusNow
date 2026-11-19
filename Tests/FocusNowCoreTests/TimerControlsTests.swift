@@ -60,11 +60,64 @@ struct TimerControlsTests {
         #expect(h.settings.value.focusMinutes == 40)
     }
 
-    @Test func adjustingIsClampedToFiveThroughOneEighty() {
-        for _ in 0..<20 { e.adjustNextFocus(byMinutes: -5) }
-        #expect(e.remainingSeconds == 300)
+    @Test func adjustingIsClampedToOneThroughOneEighty() {
+        e.setNextFocus(minutes: 3)
+        e.adjustNextFocus(byMinutes: -5)
+        #expect(e.remainingSeconds == 60)
         for _ in 0..<50 { e.adjustNextFocus(byMinutes: 5) }
         #expect(e.remainingSeconds == 10_800)
+    }
+
+    @Test func typingTheNextFocusLengthSetsOnlyTheNextSession() {
+        e.setNextFocus(minutes: 25)
+        #expect(e.remainingSeconds == 1500)
+        #expect(h.settings.value.focusMinutes == 40)
+        e.start()
+        #expect(e.active?.plannedSeconds == 1500)
+    }
+
+    @Test func typedLengthIsClamped() {
+        e.setNextFocus(minutes: 0)
+        #expect(e.remainingSeconds == 60)
+        e.setNextFocus(minutes: 999)
+        #expect(e.remainingSeconds == 10_800)
+    }
+
+    @Test func typingOnlyAppliesBeforeAFocusSession() {
+        e.start()
+        e.setNextFocus(minutes: 25)
+        #expect(e.nextFocusSecondsOverride == nil)
+        h.run(2400) // short break pending
+        e.setNextFocus(minutes: 25)
+        #expect(e.nextFocusSecondsOverride == nil)
+        #expect(e.remainingSeconds == 300)
+    }
+
+    @Test func changingTheFocusDefaultDropsTheOneOff() {
+        e.adjustNextFocus(byMinutes: 5)
+        h.settings.value.focusMinutes = 30
+        #expect(e.remainingSeconds == 1800)
+        #expect(e.nextFocusSecondsOverride == nil)
+        e.tick()
+        h.settings.value.focusMinutes = 40
+        #expect(e.remainingSeconds == 2400)
+    }
+
+    @Test func otherSettingsChangesKeepTheOneOff() {
+        e.adjustNextFocus(byMinutes: 5)
+        h.settings.value.shortBreakMinutes = 7
+        h.settings.value.dailyGoalSeconds = 3600
+        #expect(e.remainingSeconds == 2700)
+    }
+
+    @Test func inASessionWhileRunningOrPausedOnly() {
+        #expect(!e.isInSession)
+        e.start(); #expect(e.isInSession)
+        e.pause(); #expect(e.isInSession)
+        e.resume(); h.run(2400)
+        #expect(!e.isInSession) // break pending
+        e.start(); #expect(e.isInSession)
+        e.skipBreak(); #expect(!e.isInSession)
     }
 
     @Test func adjustingOnlyAppliesBeforeFocus() {

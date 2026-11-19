@@ -34,8 +34,18 @@ public final class TimerEngine {
     /// Focus sessions done in the current cycle.
     public private(set) var cyclePosition = 0
     public private(set) var now: Date
-    /// A one-off length for the next focus session; cleared when it starts.
-    public var nextFocusSecondsOverride: Int?
+    /// A one-off length for the next focus session; cleared when it starts. It
+    /// belongs to the Focus default it was set against: once that default
+    /// changes it reads as nil, and the next tick drops it for good.
+    public var nextFocusSecondsOverride: Int? {
+        get {
+            guard let oneOff, oneOff.focusMinutes == settings().focusMinutes else { return nil }
+            return oneOff.seconds
+        }
+        set { oneOff = newValue.map { OneOff(seconds: $0, focusMinutes: settings().focusMinutes) } }
+    }
+    private struct OneOff: Equatable { var seconds: Int; var focusMinutes: Int }
+    private var oneOff: OneOff?
     /// Increments every time a session record is saved.
     public private(set) var savedSessionCount = 0
 
@@ -168,6 +178,7 @@ public final class TimerEngine {
 
     public func tick() {
         let hadGap = refreshNow()
+        if let oneOff, oneOff.focusMinutes != settings().focusMinutes { self.oneOff = nil }
         if status == .idle {
             rollOverDayIfNeeded()
             return
