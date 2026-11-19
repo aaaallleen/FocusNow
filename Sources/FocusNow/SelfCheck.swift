@@ -264,6 +264,14 @@ extension AppDelegate {
         settings.settings.focusMinutes = 40
         snap.note("one-off after focus 30 and back: \(engine.nextFocusSecondsOverride.map(String.init) ?? "none") (want none)")
 
+        // The stepper steps from what was typed, not from the value it replaces.
+        await snap.type("25", intoField: 0, of: window)
+        await snap.clickStepper(0, up: true, in: window)
+        window.makeFirstResponder(nil)
+        await snap.wait(0.3)
+        snap.note("focus field 25 then stepper up → focus=\(focus()) (want 26)")
+        settings.settings.focusMinutes = 40
+
         // During a session the lengths stay editable and apply from the next one.
         engine.start()
         await snap.wait(0.3)
@@ -573,6 +581,13 @@ extension AppDelegate {
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Five minutes longer", in: window)
         snap.note("digits 25 then + → remaining=\(engine.remainingSeconds)")
+        await reset()
+
+        // Leaving the Timer page mid-edit keeps what was typed, as closing does.
+        await typeDigits("25")
+        _ = await command(",", 43, in: window)
+        _ = await command("1", 18, in: window)
+        snap.note("digits 25 then ⌘, then ⌘1 → remaining=\(engine.remainingSeconds) page=\(mainState.page) (want 1500 timer)")
         await reset()
 
         // A finish opens the popover; answering in the window closes it.

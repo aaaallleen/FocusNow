@@ -75,8 +75,8 @@ struct LengthField: View {
                 commit()
             }
         }
-        // Removed mid-edit (a session hides the configuration, or the page
-        // changes): focus never reports leaving, so keep what was typed here.
+        // Removed mid-edit (another section or page shown): focus never
+        // reports leaving, so keep what was typed here.
         .onDisappear {
             pendingEdits?.unregister(editID)
             commit()

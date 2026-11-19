@@ -12,7 +12,7 @@ extension TimerEngine {
 
     public var sessionsBeforeLongBreak: Int { currentSettings.sessionsBeforeLongBreak }
 
-    /// True while a session is running or paused (the Timer page hides its configuration).
+    /// True while a session is running or paused.
     public var isInSession: Bool { status != .idle }
 
     /// The current (or, when idle, next) phase: "FOCUS · 2 of 4", "BREAK", "LONG BREAK".

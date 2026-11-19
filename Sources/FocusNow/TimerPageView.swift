@@ -19,10 +19,11 @@ struct TimerPageView: View {
                 TimerRing(engine: engine, diameter: max(diameter, 120), editable: true)
                 TimerControlsRow(engine: engine, onAction: onAction)
                     .frame(maxWidth: 320)
-                    .animation(.easeInOut(duration: Theme.phaseFade), value: engine.phaseKey)
                 TodayBar(engine: engine, settings: settings)
                     .frame(maxWidth: 320)
             }
+            // Phase changes crossfade (label, ring colour, controls), as in the popover.
+            .animation(.easeInOut(duration: Theme.phaseFade), value: engine.phaseKey)
             .padding(.horizontal, 24)
             .frame(width: size.width, height: size.height)
         }

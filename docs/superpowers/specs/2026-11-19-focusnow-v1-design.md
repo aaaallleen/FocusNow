@@ -122,6 +122,8 @@ Chart granularity **(call)**:
 
 ### Settings window
 
+> Superseded by `2026-11-19-focusnow-settings-tab-design.md`: Settings is now the main window's third tab (Cycle, Goal, General), and ⌘, opens it.
+
 A standard Settings window (⌘,) **(call)** with:
 
 - Focus length, short break length, long break length.

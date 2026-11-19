@@ -160,6 +160,10 @@ struct TimerRing: View {
                     if !focused { finishEditing(apply: true) } // clicked away
                 }
                 .onAppear { DispatchQueue.main.async { fieldFocused = true } }
+                // Removed mid-edit (another page shown): focus never reports
+                // leaving, so apply what was typed here. A session started
+                // elsewhere still drops it: the length then can't be set.
+                .onDisappear { finishEditing(apply: true) }
                 .accessibilityLabel("Next session's length in minutes")
         } else if canEdit {
             // VoiceOver reads the time, as it does when the digits aren't
