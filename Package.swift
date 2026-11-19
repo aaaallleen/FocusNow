@@ -9,6 +9,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "FocusNowCore"),
+        .executableTarget(name: "FocusNow", dependencies: ["FocusNowCore"]),
         .testTarget(name: "FocusNowCoreTests", dependencies: ["FocusNowCore"]),
     ]
 )
