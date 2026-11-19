@@ -34,7 +34,7 @@ struct MainWindowView: View {
                         state.settingsSection = .calendar
                         state.page = .settings
                     })
-            case .stats: StatsView(model: statsModel)
+            case .stats: StatsView(model: statsModel, preferences: calendarPrefs)
             case .settings:
                 SettingsView(settings: settings, state: state, calendarModel: calendarModel, calendarPrefs: calendarPrefs)
             }

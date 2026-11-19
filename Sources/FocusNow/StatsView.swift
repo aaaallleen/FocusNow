@@ -6,14 +6,22 @@ import SwiftUI
 /// the selected period, and the sessions in the selected bar (or today).
 struct StatsView: View {
     let model: StatsViewModel
+    @Bindable var preferences: CalendarPreferences
+
+    static let displaySwitchIdentifier = "stats-display"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             tiles
             header
-            chart
-                .frame(minHeight: 170, maxHeight: 220)
-            sessionList
+            if preferences.statsDisplay.showsCalendar(for: model.range) {
+                FocusCalendarView(model: model, uses24Hour: FocusCalendarView.systemUses24Hour)
+                    .frame(maxHeight: .infinity)
+            } else {
+                chart
+                    .frame(minHeight: 170, maxHeight: 220)
+                sessionList
+            }
         }
         .padding(20)
         .frame(minWidth: 640, minHeight: 480, alignment: .top)
@@ -67,6 +75,16 @@ struct StatsView: View {
             Spacer()
             if model.range != .day {
                 Text(summaryText).font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
+            }
+            if StatsDisplay.offersCalendar(for: model.range) {
+                Picker("Stats view", selection: $preferences.statsDisplay) {
+                    Text("Chart").tag(StatsDisplay.chart)
+                    Text("Calendar").tag(StatsDisplay.calendar)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier(Self.displaySwitchIdentifier)
             }
         }
     }

@@ -137,7 +137,7 @@ extension AppDelegate {
                 .joined(separator: " ")
         }
         snap.note("tiles: \(tiles())")
-        let view = { StatsView(model: self.statsModel).frame(width: 760, height: 560) }
+        let view = { StatsView(model: self.statsModel, preferences: self.calendarPrefs).frame(width: 760, height: 560) }
         snap.render(view(), as: "stats-week")
         snap.render(view(), as: "stats-week-dark", dark: true)
         snap.note("week: buckets=\(statsModel.buckets.count) summary=\(statsModel.summary) listed=\(statsModel.listedSessions.count)")
@@ -622,7 +622,7 @@ extension AppDelegate {
     }
 
     /// About six weeks of plausible history, so the stats window has something to show.
-    private func seedHistory() {
+    func seedHistory() {
         let calendar = Calendar.autoupdatingCurrent
         let today = calendar.startOfDay(for: Date())
         for back in 1...45 {

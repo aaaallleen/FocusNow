@@ -114,6 +114,16 @@ struct PeriodFormatTests {
         #expect(text("00:30", "01:00") == "12:30–1 am")
     }
 
+    @Test func aSingleTimeMatchesThePeriods() {
+        func time(_ hm: String, _ uses24Hour: Bool = false) -> String {
+            PeriodFormat.time(date("2026-11-19T\(hm):00Z"), calendar: utc, uses24Hour: uses24Hour)
+        }
+        #expect(time("09:45") == "9:45 am")
+        #expect(time("12:00") == "12 pm")
+        #expect(time("00:30") == "12:30 am")
+        #expect(time("09:45", true) == "09:45")
+    }
+
     @Test func twentyFourHour() {
         #expect(text("10:00", "11:50", true) == "10:00–11:50")
         #expect(text("16:00", "19:00", true) == "16:00–19:00")

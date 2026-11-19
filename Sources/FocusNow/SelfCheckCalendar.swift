@@ -74,6 +74,82 @@ extension AppDelegate {
             "upcoming=\(calendarModel.upcoming.rows.count)+\(calendarModel.upcoming.moreCount)")
 
         await checkTimerEvents(snap, fake: fake)
+        await checkStatsCalendar(snap)
+    }
+
+    /// Stats' Chart | Calendar switch and the calendar views.
+    private func checkStatsCalendar(_ snap: DebugSnapshots) async {
+        if sessions.earliestStart() == nil { seedHistory() }
+        // A busy day in last month (always fully past): six 20-minute sessions an hour apart.
+        let calendar = Calendar.autoupdatingCurrent
+        let thisMonth = calendar.dateInterval(of: .month, for: Date())!.start
+        let busyDay = calendar.date(byAdding: DateComponents(month: -1, day: 14), to: thisMonth)!
+        for hour in 18...23 {
+            let start = calendar.date(byAdding: .hour, value: hour, to: busyDay)!
+            sessions.save(SessionRecord(kind: .focus, startedAt: start, endedAt: start.addingTimeInterval(1200),
+                                        plannedSeconds: 1200, activeSeconds: 1200, outcome: .completed))
+        }
+        statsModel.reload()
+
+        closeAllWindows()
+        await snap.wait(0.4)
+        showStats()
+        await snap.wait(0.6)
+        guard let window = windows.mainWindow else {
+            snap.note("no main window")
+            return
+        }
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.4)
+        func present(_ label: String) -> Bool { snap.accessibilityFrame(of: label, in: window) != nil }
+        func shows(_ text: String) -> Bool { snap.containsText(text, in: window) }
+        func listShown() -> Bool { snap.readable(in: window).contains { $0.text.hasPrefix("Sessions · ") } }
+        let view = { StatsView(model: self.statsModel, preferences: self.calendarPrefs) }
+
+        var offered: [String] = []
+        for range in StatsRange.allCases {
+            statsModel.range = range
+            await snap.wait(0.3)
+            offered.append("\(range)=\(present(StatsView.displaySwitchIdentifier))")
+        }
+        snap.note("stats switch: \(offered.joined(separator: " ")) (want day week month true, year allTime false)")
+
+        calendarPrefs.statsDisplay = .calendar
+        statsModel.range = .week
+        await snap.wait(0.4)
+        let blocks = statsModel.focusDays.reduce(0) { $0 + $1.blocks.count }
+        let span = statsModel.hourSpan.map { "\($0.first)–\($0.last)" } ?? "none"
+        snap.note("calendar week: days=\(statsModel.focusDays.count) blocks=\(blocks) span=\(span) " +
+            "sessionList=\(listShown()) (want 7 >0 a span false)")
+        snap.render(view().frame(width: 760, height: 560), as: "stats-calendar-week")
+        // The live window too: the off-screen renderer can't draw the AppKit switch.
+        if let frameView = window.contentView?.superview { snap.capture(frameView, as: "stats-calendar-week-live", scale: 1) }
+        snap.render(view().frame(width: 760, height: 560), as: "stats-calendar-week-dark", dark: true)
+        statsModel.range = .day
+        snap.render(view().frame(width: 760, height: 560), as: "stats-calendar-day")
+
+        statsModel.range = .month
+        statsModel.pageBack()
+        await snap.wait(0.4)
+        let busy = statsModel.focusDays.first { $0.day.start == busyDay }
+        let busyLabel = snap.readable(in: window).first { $0.text.hasPrefix(busyDay.formatted(.dateTime.month(.abbreviated).day()) + ",") }?.text
+        snap.note("calendar month: weeks=\(statsModel.monthWeeks.count) busy periods=\(busy?.periods.count ?? -1) " +
+            "label=\"\(busyLabel ?? "-")\" (want 4–6 ≥6 the date, total and every period)")
+        snap.render(view().frame(width: 760, height: 560), as: "stats-calendar-month")
+        snap.render(view().frame(width: 640, height: 480), as: "stats-calendar-month-min")
+
+        statsModel.range = .day
+        for _ in 0..<14 where !(statsModel.focusDays.first?.blocks.isEmpty ?? true) { statsModel.pageBack() }
+        await snap.wait(0.4)
+        snap.note("empty day: blocks=\(statsModel.focusDays.first?.blocks.count ?? -1) " +
+            "text=\(shows("No focus sessions")) (want 0 true)")
+
+        calendarPrefs.statsDisplay = .chart
+        await snap.wait(0.4)
+        snap.note("chart again: sessionList=\(listShown()) (want true)")
+        statsModel.range = .week
+        closeAllWindows()
+        await snap.wait(0.3)
     }
 
     /// Today's events under the timer.

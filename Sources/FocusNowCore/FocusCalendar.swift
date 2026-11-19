@@ -151,6 +151,15 @@ public struct FocusCalendar: Sendable {
 /// or with 24-hour time "10:00–11:50". A period cut at midnight ends "12 am"
 /// (24-hour: "24:00").
 public enum PeriodFormat {
+    /// One time in the same style: "9:45 am", "12 pm", or "09:45".
+    public static func time(_ date: Date, calendar: Calendar, uses24Hour: Bool) -> String {
+        let c = calendar.dateComponents([.hour, .minute], from: date)
+        let (h, m) = (c.hour ?? 0, c.minute ?? 0)
+        if uses24Hour { return String(format: "%02d:%02d", h, m) }
+        let h12 = h % 12 == 0 ? 12 : h % 12
+        return (m == 0 ? "\(h12)" : String(format: "%d:%02d", h12, m)) + (h < 12 ? " am" : " pm")
+    }
+
     public static func text(_ period: FocusPeriod, calendar: Calendar, uses24Hour: Bool) -> String {
         let s = calendar.dateComponents([.hour, .minute], from: period.start)
         let e = calendar.dateComponents([.hour, .minute], from: period.end)

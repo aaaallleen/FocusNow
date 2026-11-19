@@ -17,6 +17,10 @@ enum Theme {
     }
 
     static let focus = Color(nsColor: focusNS)
+    /// Text drawn on the focus colour: white on the dark teal, near-black on the light one.
+    static let onFocus = Color(nsColor: NSColor(name: "onFocus") { appearance in
+        appearance.isDark ? NSColor(white: 0.08, alpha: 0.85) : .white
+    })
     static let rest = Color(nsColor: restNS)
     static let track = Color(nsColor: .quaternaryLabelColor)
 
