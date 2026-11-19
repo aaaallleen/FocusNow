@@ -1,5 +1,6 @@
 import AppKit
 import FocusNowCore
+import SwiftUI
 
 /// Development aid. When FOCUSNOW_SNAPSHOT_DIR is set, the app drives itself
 /// through a script of steps, renders its own views to PNGs in that folder,
@@ -43,6 +44,21 @@ final class DebugSnapshots {
         }
         guard let tiff = out.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return }
         try? bitmap.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(name).png"))
+    }
+
+    /// Renders a SwiftUI view offscreen, in light or dark appearance.
+    func render<V: View>(_ view: V, as name: String, dark: Bool = false) {
+        let content = view
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, dark ? .dark : .light)
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2
+        guard let cg = renderer.cgImage else {
+            note("\(name): render failed")
+            return
+        }
+        let rep = NSBitmapImageRep(cgImage: cg)
+        try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("\(name).png"))
     }
 
     func wait(_ seconds: Double) async {

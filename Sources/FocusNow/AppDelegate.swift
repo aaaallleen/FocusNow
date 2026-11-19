@@ -1,21 +1,24 @@
 import AppKit
 import FocusNowCore
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var settings: SettingsStore!
-    private var engine: TimerEngine!
+    private(set) var settings: SettingsStore!
+    private(set) var sessions: SessionStore!
+    private(set) var engine: TimerEngine!
+    private(set) var statusItem: StatusItemController!
+    private(set) var alerter: FinishAlerter!
     private var driver: TimerDriver!
-    private var statusItem: StatusItemController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let calendar = Calendar.autoupdatingCurrent
         let clock: () -> Date = { Date() }
         let dataDir = Self.dataDirectory()
 
-        settings = SettingsStore(defaults: Self.defaults(), clock: clock, calendar: calendar)
-        let sessions = Self.openSessionStore(at: dataDir.appendingPathComponent("sessions.store"))
-        let settings = self.settings!
+        let settings = SettingsStore(defaults: Self.defaults(), clock: clock, calendar: calendar)
+        self.settings = settings
+        sessions = Self.openSessionStore(at: dataDir.appendingPathComponent("sessions.store"))
         engine = TimerEngine(
             settings: { settings.settings }, sessions: sessions,
             snapshots: FileSnapshotStore(url: dataDir.appendingPathComponent("engine-snapshot.json")),
@@ -24,44 +27,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         driver = TimerDriver(engine: engine)
         driver.start()
 
+        alerter = FinishAlerter(settings: settings)
         statusItem = StatusItemController(engine: engine)
-        // Temporary until the popover exists: click toggles the countdown.
-        statusItem.onClick = { [weak self] in
-            guard let engine = self?.engine else { return }
-            switch engine.status {
-            case .idle: engine.start()
-            case .running: engine.pause()
-            case .paused: engine.resume()
-            }
+        statusItem.setPopoverContent(makePopoverController())
+
+        engine.onFinish = { [weak self] kind in
+            guard let self else { return }
+            statusItem.showPopover(fromClick: false)
+            alerter.sessionFinished(kind)
+        }
+        alerter.onNotificationClicked = { [weak self] in
+            self?.engine.acknowledge()
+            self?.statusItem.showPopover(fromClick: true)
         }
 
         if let dir = DebugSnapshots.directory {
-            Task { await runSnapshotScript(DebugSnapshots(dir: dir)) }
+            alerter.isSelfCheck = true
+            Task { await runSelfCheck(DebugSnapshots(dir: dir)) }
         }
-    }
-
-    private func runSnapshotScript(_ snap: DebugSnapshots) async {
-        await snap.wait(0.5)
-        snap.note("idle: " + DebugSnapshots.describe(statusItem.button))
-        engine.start()
-        await snap.wait(0.6)
-        snap.note("focus +0.6s: " + DebugSnapshots.describe(statusItem.button))
-        await snap.wait(2.0)
-        snap.note("focus +2.6s: " + DebugSnapshots.describe(statusItem.button))
-        engine.pause()
-        await snap.wait(0.6)
-        snap.note("paused: " + DebugSnapshots.describe(statusItem.button))
-        await snap.wait(1.5)
-        snap.note("paused +1.5s: " + DebugSnapshots.describe(statusItem.button))
-        engine.cancel()
-        await snap.wait(0.6)
-        snap.note("cancelled: " + DebugSnapshots.describe(statusItem.button))
-        snap.finish()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         engine?.prepareForQuit()
     }
+
+    func makePopoverController() -> NSViewController {
+        let controller = NSHostingController(rootView: PopoverView(
+            engine: engine, settings: settings,
+            onAction: { [weak self] control in
+                guard let self else { return }
+                statusItem.popoverWasUsed()
+                if control == .startFocus || control == .startBreak, DebugSnapshots.directory == nil {
+                    alerter.requestAuthorizationIfNeeded()
+                }
+            },
+            onStats: { [weak self] in self?.showStats() },
+            onSettings: { [weak self] in self?.showSettings() },
+            onQuit: { NSApp.terminate(nil) }))
+        controller.sizingOptions = [.preferredContentSize]
+        return controller
+    }
+
+    func showStats() {}
+
+    func showSettings() {}
 
     // MARK: - Storage
 

@@ -61,6 +61,8 @@ public final class TimerEngine {
 
     // MARK: - Derived values
 
+    var currentSettings: TimerSettings { settings() }
+
     public var plannedSecondsForNext: Int {
         if nextKind == .focus, let override = nextFocusSecondsOverride { return override }
         return settings().plannedSeconds(for: nextKind)
