@@ -11,6 +11,7 @@ import FocusNowCore
 final class EventKitCalendarSource: CalendarSource {
     private let store = EKEventStore()
     private var observer: NSObjectProtocol?
+    private var accessChange = AccessChange()
     var onChange: (() -> Void)?
 
     init() {
@@ -21,25 +22,28 @@ final class EventKitCalendarSource: CalendarSource {
         }
     }
 
+    /// Every look at access also catches it becoming readable, from the
+    /// Allow Access prompt or from System Settings while the app runs, and
+    /// resets the store so it reads the calendars it couldn't before.
     var access: CalendarAccess {
-        switch EKEventStore.authorizationStatus(for: .event) {
+        let access: CalendarAccess = switch EKEventStore.authorizationStatus(for: .event) {
         case .fullAccess: .granted
         case .writeOnly: .writeOnly
         case .notDetermined: .notAsked
         case .denied, .restricted: .denied
         @unknown default: .denied
         }
+        if accessChange.becameReadable(access) { store.reset() }
+        return access
     }
 
     func requestAccess() async -> CalendarAccess {
         guard access == .notAsked else { return access }
         let store = self.store
-        let granted: Bool = await withCheckedContinuation { continuation in
+        _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
         }
-        // A store made before access was granted reads nothing until it's reset.
-        if granted { store.reset() }
-        return access
+        return access // resets the store if access was granted
     }
 
     func calendars() -> [CalendarInfo] {

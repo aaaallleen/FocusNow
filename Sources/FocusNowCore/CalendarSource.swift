@@ -133,3 +133,18 @@ public final class FakeCalendarSource: CalendarSource {
         onChange?()
     }
 }
+
+/// Tells when calendar access has just become readable: a calendar store
+/// made before access was granted (at launch, or before the owner turned it
+/// on in System Settings) reads nothing until it's reset.
+public struct AccessChange: Sendable {
+    private var wasReadable: Bool?
+
+    public init() {}
+
+    /// True when `access` can read and couldn't at the last look (or this is the first look).
+    public mutating func becameReadable(_ access: CalendarAccess) -> Bool {
+        defer { wasReadable = access.canRead }
+        return access.canRead && wasReadable != true
+    }
+}

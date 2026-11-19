@@ -61,9 +61,10 @@ public final class CalendarModel {
         updateUpcoming()
     }
 
-    /// Refreshes once a listed event has started or ended, or the day changed.
+    /// Refreshes once a listed event has started or ended, the day changed, or
+    /// access changed (turning it off in System Settings may post no notice).
     public func refreshIfDue() {
-        if clock() >= nextChange { refresh() }
+        if clock() >= nextChange || source.access != access { refresh() }
     }
 
     public func requestAccess() async {

@@ -117,6 +117,17 @@ struct CalendarModelTests {
         #expect(model.upcoming == .empty)
     }
 
+    @Test func aChangeOfAccessIsNoticedWithoutANotification() {
+        fake.access = .granted
+        let model = makeModel()
+        fake.access = .denied // revoked in System Settings; EventKit may post nothing
+        clock.now = date("2026-11-19T10:16:00Z") // no event starts or ends yet
+        model.refreshIfDue()
+        #expect(model.access == .denied)
+        #expect(model.upcoming == .empty)
+        #expect(model.groups.isEmpty)
+    }
+
     @Test func writeOnlyCannotRead() {
         fake.access = .writeOnly
         let model = makeModel()
@@ -132,5 +143,21 @@ struct CalendarModelTests {
         clock.now = date("2026-11-20T08:00:00Z")
         model.refreshIfDue()
         #expect(ids(model) == ["tomorrow"])
+    }
+}
+
+struct AccessChangeTests {
+    @Test func reportsWhenAccessBecomesReadable() {
+        var change = AccessChange()
+        #expect(change.becameReadable(.denied) == false)
+        #expect(change.becameReadable(.granted) == true)
+        #expect(change.becameReadable(.granted) == false)
+        #expect(change.becameReadable(.writeOnly) == false)
+        #expect(change.becameReadable(.granted) == true)
+    }
+
+    @Test func readableAtTheFirstLookCounts() {
+        var change = AccessChange()
+        #expect(change.becameReadable(.granted) == true)
     }
 }
