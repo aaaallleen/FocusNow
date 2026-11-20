@@ -39,6 +39,22 @@ struct EventTimeTextTests {
         #expect(!t.contains("18"), "\(t)")
     }
 
+    /// Locales that write dates as numbers ("18.11.2026", "2026-11-18") get times only too.
+    @Test func overnightShowsTimesOnlyInNumericDateLocales() {
+        for id in ["de_DE", "en_CA", "sv_SE", "ko_KR"] {
+            let t = plain(EventTimeText.range(event("e", "2026-11-18T23:00:00Z", "2026-11-19T01:00:00Z"),
+                                              calendar: utc, locale: Locale(identifier: id)))
+            #expect(!t.contains("2026") && !t.contains("18") && !t.contains("19"), "\(id): \(t)")
+        }
+    }
+
+    /// An event ending at midnight ends on the next day: times only.
+    @Test func endingAtMidnightShowsTimesOnly() {
+        let t = plain(EventTimeText.range(event("e", "2026-11-19T20:00:00Z", "2026-11-20T00:00:00Z"),
+                                          calendar: utc, locale: Locale(identifier: "de_DE")))
+        #expect(t.contains("20:00") && t.contains("00:00") && !t.contains("2026"), "\(t)")
+    }
+
     @Test func spokenRange() {
         let t = plain(EventTimeText.spoken(event("e", "2026-11-19T13:30:00Z", "2026-11-19T15:47:00Z"), calendar: utc, locale: us))
         #expect(t == "1:30 PM to 3:47 PM", "\(t)")

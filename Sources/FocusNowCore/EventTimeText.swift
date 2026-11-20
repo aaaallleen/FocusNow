@@ -11,12 +11,12 @@ public enum EventTimeText {
         formatter.timeZone = calendar.timeZone
         formatter.dateStyle = .none
         formatter.timeStyle = .short
-        let text = formatter.string(from: event.start, to: event.end)
-        // Across midnight some locales add the dates back; times alone, then.
-        if calendar.isDate(event.start, inSameDayAs: event.end) || !mentionsDate(text, event, calendar, locale) {
-            return text
+        // Across midnight (or ending at it) the interval format adds dates, as
+        // words or numbers depending on the locale; the two times alone, then.
+        guard calendar.isDate(event.start, inSameDayAs: event.end) else {
+            return time(event.start, calendar, locale) + "–" + time(event.end, calendar, locale)
         }
-        return time(event.start, calendar, locale) + "–" + time(event.end, calendar, locale)
+        return formatter.string(from: event.start, to: event.end)
     }
 
     /// "1:30 PM to 3:47 PM", for VoiceOver.
@@ -32,15 +32,5 @@ public enum EventTimeText {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: date)
-    }
-
-    private static func mentionsDate(_ text: String, _ event: CalendarEvent, _ calendar: Calendar, _ locale: Locale) -> Bool {
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.locale = locale
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate("MMM")
-        return text.contains(formatter.string(from: event.start)) || text.contains(formatter.string(from: event.end))
-            || text.contains("/")
     }
 }
