@@ -109,16 +109,6 @@ struct TimerEngineTests {
         #expect(e.nextKind == .focus)
     }
 
-    @Test func oneOffLengthAppliesOnceOnly() {
-        e.nextFocusSecondsOverride = 600
-        #expect(e.remainingSeconds == 600)
-        e.start()
-        #expect(e.active?.plannedSeconds == 600)
-        #expect(e.nextFocusSecondsOverride == nil)
-        e.cancel()
-        #expect(e.remainingSeconds == 2400)
-    }
-
     @Test func changingSettingsMidSessionKeepsTheRunningLength() {
         e.start()
         h.run(60)

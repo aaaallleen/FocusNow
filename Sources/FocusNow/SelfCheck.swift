@@ -189,6 +189,7 @@ extension AppDelegate {
         let before = statsModel.tiles[.day]?.sessionCount ?? -1
         engine.nextFocusSecondsOverride = 2
         engine.start()
+        engine.nextFocusSecondsOverride = nil // a set length stays; only this session is short
         await snap.wait(3.0)
         engine.acknowledge()
         statusItem.closePopover()
@@ -549,7 +550,7 @@ extension AppDelegate {
         statusItem.closePopover()
         await snap.wait(0.5)
         snap.note("popover closed mid-edit → \(remaining())")
-        engine.setNextFocus(minutes: 40)
+        engine.focusDefaultChanged() // later phases start from the default length
         await snap.wait(1.0) // the popover reports itself shown for a moment after closing
     }
 
@@ -587,6 +588,9 @@ extension AppDelegate {
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Start focus", in: window)
         snap.note("digits 25 then Start → planned=\(planned())")
+        engine.cancel()
+        await snap.wait(0.3)
+        snap.note("after cancel remaining=\(TimeFormat.clock(engine.remainingSeconds)) (want 25:00, the typed length stays)")
         await reset()
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Five minutes longer", in: window)
@@ -603,12 +607,14 @@ extension AppDelegate {
         // A finish opens the popover; answering in the window closes it.
         engine.nextFocusSecondsOverride = 2
         engine.start()
+        engine.nextFocusSecondsOverride = nil // a set length stays; only this session is short
         await snap.wait(3.0)
         snap.note("finished: popoverVisible=\(statusItem.popoverWindowVisible) closesOnOutsideClick=\(statusItem.closesOnOutsideClick)")
         _ = await snap.press(accessibilityLabel: "Start break", in: window)
         await snap.wait(0.6)
         snap.note("Start break in window → popoverVisible=\(statusItem.popoverWindowVisible) status=\(engine.status) phase=\"\(engine.phaseLabel)\"")
         engine.skipBreak()
+        engine.focusDefaultChanged() // later phases start from the default length
         await snap.wait(1.0)
     }
 
@@ -797,6 +803,7 @@ extension AppDelegate {
         // A 3-second focus session to exercise the finish flow.
         engine.nextFocusSecondsOverride = 3
         engine.start()
+        engine.nextFocusSecondsOverride = nil // a set length stays; only this session is short
         await snap.wait(1.2)
         state("focus running")
         menubar("menubar focus")

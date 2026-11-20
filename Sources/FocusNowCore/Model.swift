@@ -75,6 +75,18 @@ public struct ActiveSession: Codable, Equatable, Sendable {
     }
 }
 
+/// A focus length set on the timer, and the Focus default it was set against:
+/// it stops applying once that default changes.
+public struct FocusOverride: Codable, Equatable, Sendable {
+    public var seconds: Int
+    public var focusMinutes: Int
+
+    public init(seconds: Int, focusMinutes: Int) {
+        self.seconds = seconds
+        self.focusMinutes = focusMinutes
+    }
+}
+
 /// What the engine writes to disk so a crash or relaunch can recover.
 public struct EngineSnapshot: Codable, Equatable, Sendable {
     public var active: ActiveSession?
@@ -82,12 +94,17 @@ public struct EngineSnapshot: Codable, Equatable, Sendable {
     public var cyclePosition: Int
     public var cycleDay: Date
     public var nextKind: SessionKind
+    /// The focus length set on the timer, if any. Snapshots saved before it
+    /// existed decode as nil.
+    public var focusOverride: FocusOverride?
 
-    public init(active: ActiveSession?, savedAt: Date, cyclePosition: Int, cycleDay: Date, nextKind: SessionKind) {
+    public init(active: ActiveSession?, savedAt: Date, cyclePosition: Int, cycleDay: Date, nextKind: SessionKind,
+                focusOverride: FocusOverride? = nil) {
         self.active = active
         self.savedAt = savedAt
         self.cyclePosition = cyclePosition
         self.cycleDay = cycleDay
         self.nextKind = nextKind
+        self.focusOverride = focusOverride
     }
 }

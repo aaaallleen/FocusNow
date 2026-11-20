@@ -59,22 +59,25 @@ extension TimerEngine {
         return ControlRows(main: main, others: all.filter { $0 != main })
     }
 
-    /// Changes only the next focus session's length, in steps within 1–180 minutes.
+    /// Changes the set focus length in steps, within 1–180 minutes.
     public func adjustNextFocus(byMinutes delta: Int) {
         guard status == .idle, nextKind == .focus else { return }
         setNextFocus(minutes: plannedSecondsForNext / 60 + delta)
     }
 
-    /// Sets only the next focus session's length, in whole minutes clamped to
-    /// 1–180. Does nothing unless idle with a focus session next.
+    /// Sets the focus length, in whole minutes clamped to 1–180, until it's set
+    /// again or the Focus default changes. Does nothing unless idle with a
+    /// focus session next. Saved, so it survives a relaunch.
     public func setNextFocus(minutes: Int) {
         guard status == .idle, nextKind == .focus else { return }
         nextFocusSecondsOverride = minutes.clamped(to: Self.adjustRangeMinutes) * 60
+        saveSnapshot()
     }
 
-    /// The owner changed the Focus default: a one-off set against the old default
+    /// The owner changed the Focus default: a length set against the old default
     /// no longer applies, even if the default is changed back before the next tick.
     public func focusDefaultChanged() {
         nextFocusSecondsOverride = nil
+        saveSnapshot()
     }
 }
