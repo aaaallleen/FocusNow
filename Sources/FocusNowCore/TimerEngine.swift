@@ -34,19 +34,18 @@ public final class TimerEngine {
     /// Focus sessions done in the current cycle.
     public private(set) var cyclePosition = 0
     public private(set) var now: Date
-    /// A one-off length for the next focus session; cleared when it starts. It
-    /// belongs to the Focus default it was set against: once that default
-    /// changes it reads as nil, and `focusDefaultChanged()` (or the next tick)
-    /// drops it for good.
+    /// A focus length set on the timer. It stays, through sessions, breaks,
+    /// days and relaunches, until it's set again. It belongs to the Focus
+    /// default it was set against: once that default changes it reads as nil,
+    /// and `focusDefaultChanged()` (or the next tick) drops it for good.
     public var nextFocusSecondsOverride: Int? {
         get {
-            guard let oneOff, oneOff.focusMinutes == settings().focusMinutes else { return nil }
-            return oneOff.seconds
+            guard let focusOverride, focusOverride.focusMinutes == settings().focusMinutes else { return nil }
+            return focusOverride.seconds
         }
-        set { oneOff = newValue.map { OneOff(seconds: $0, focusMinutes: settings().focusMinutes) } }
+        set { focusOverride = newValue.map { FocusOverride(seconds: $0, focusMinutes: settings().focusMinutes) } }
     }
-    private struct OneOff: Equatable { var seconds: Int; var focusMinutes: Int }
-    private var oneOff: OneOff?
+    private var focusOverride: FocusOverride?
     /// Increments every time a session record is saved.
     public private(set) var savedSessionCount = 0
 
@@ -123,7 +122,6 @@ public final class TimerEngine {
         rollOverDayIfNeeded()
         cycleDay = calendar.startOfDay(for: now)
         let planned = plannedSecondsForNext
-        if nextKind == .focus { nextFocusSecondsOverride = nil }
         active = ActiveSession(kind: nextKind, startedAt: now, plannedSeconds: planned, lastResumedAt: now)
         status = .running
         needsAttention = false
@@ -179,7 +177,10 @@ public final class TimerEngine {
 
     public func tick() {
         let hadGap = refreshNow()
-        if let oneOff, oneOff.focusMinutes != settings().focusMinutes { self.oneOff = nil }
+        if let focusOverride, focusOverride.focusMinutes != settings().focusMinutes {
+            self.focusOverride = nil
+            saveSnapshot()
+        }
         if status == .idle {
             rollOverDayIfNeeded()
             return
@@ -233,11 +234,11 @@ public final class TimerEngine {
         saveSnapshot()
     }
 
-    private func saveSnapshot() {
+    func saveSnapshot() {
         lastSnapshotAt = now
         snapshots.save(EngineSnapshot(
             active: active, savedAt: now, cyclePosition: cyclePosition,
-            cycleDay: cycleDay, nextKind: nextKind))
+            cycleDay: cycleDay, nextKind: nextKind, focusOverride: focusOverride))
     }
 
     /// Restores the cycle from the last run and logs a session the last run
@@ -247,6 +248,8 @@ public final class TimerEngine {
         cyclePosition = snapshot.cyclePosition
         nextKind = snapshot.nextKind
         cycleDay = snapshot.cycleDay
+        // Set against another Focus default (changed while the app was closed): gone.
+        focusOverride = snapshot.focusOverride.flatMap { $0.focusMinutes == settings().focusMinutes ? $0 : nil }
         if let session = snapshot.active {
             let end = min(snapshot.savedAt, session.endsAt ?? snapshot.savedAt)
             finish(session, outcome: .endedEarly, at: end, notify: false)

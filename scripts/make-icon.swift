@@ -1,61 +1,45 @@
-// Builds build/AppIcon.icns from icon.png.
-// Usage: swift scripts/make-icon.swift [source.png] [output-dir]
+// Builds build/AppIcon.icns from the icon SVG.
+// Usage: swift scripts/make-icon.swift [source.svg] [output-dir]
+//        (defaults: Resources/Icon/icon.svg, build)
 //
-// icon.png is a picture of an icon: a cream tile on a teal background with a
-// long shadow. This crops to the cream tile, places it on the macOS icon grid
-// (an 824 px rounded square centred on a 1024 px transparent canvas, with a soft
-// drop shadow), and writes every iconset size.
+// The SVG is the whole icon: a rounded tile with the hourglass on it. AppKit
+// draws it onto the macOS icon grid (an 824 px square centred on a 1024 px
+// transparent canvas) with a soft drop shadow that follows the tile's own
+// outline, and every iconset size is written from that.
 import AppKit
 
 let args = CommandLine.arguments
-let source = URL(fileURLWithPath: args.count > 1 ? args[1] : "icon.png")
+let source = URL(fileURLWithPath: args.count > 1 ? args[1] : "Resources/Icon/icon.svg")
 let outDir = URL(fileURLWithPath: args.count > 2 ? args[2] : "build")
 
-// The cream tile spans about x 270–992, y 261–1010 (top-left pixel coordinates)
-// with a corner radius of about 186 px. A centred 690 px square sits far enough
-// inside that the clip's corners never reach the teal outside the tile.
-let cropSize = 690
-let cropCenter = CGPoint(x: 631, y: 636)
-let cropRect = CGRect(
-    x: Int(cropCenter.x) - cropSize / 2, y: Int(cropCenter.y) - cropSize / 2,
-    width: cropSize, height: cropSize)
+guard let svg = NSImage(contentsOf: source), svg.isValid else {
+    fatalError("could not read \(source.path) (copy icon.svg into Resources/Icon/)")
+}
 
 let canvas = 1024
 let tileRect = CGRect(x: 100, y: 100, width: 824, height: 824)
-let tileRadius: CGFloat = 185
-
-guard let src = CGImageSourceCreateWithURL(source as CFURL, nil),
-      let full = CGImageSourceCreateImageAtIndex(src, 0, nil),
-      let cropped = full.cropping(to: cropRect) else {
-    fatalError("could not read or crop \(source.path)")
-}
 
 func render(size: Int) -> CGImage {
-    let ctx = CGContext(
-        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.interpolationQuality = .high
+    let rep = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8, samplesPerPixel: 4,
+        hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    NSGraphicsContext.saveGraphicsState()
+    let context = NSGraphicsContext(bitmapImageRep: rep)!
+    NSGraphicsContext.current = context
+    context.imageInterpolation = .high
     let scale = CGFloat(size) / CGFloat(canvas)
-    ctx.scaleBy(x: scale, y: scale)
+    context.cgContext.scaleBy(x: scale, y: scale)
 
-    let path = CGPath(roundedRect: tileRect, cornerWidth: tileRadius, cornerHeight: tileRadius, transform: nil)
+    // The shadow is set while the tile draws, so it follows the tile's outline.
+    let shadow = NSShadow()
+    shadow.shadowOffset = NSSize(width: 0, height: -10)
+    shadow.shadowBlurRadius = 20
+    shadow.shadowColor = NSColor(white: 0, alpha: 0.3)
+    shadow.set()
+    svg.draw(in: tileRect, from: .zero, operation: .sourceOver, fraction: 1)
 
-    // Drop shadow under the tile.
-    ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 20, color: CGColor(gray: 0, alpha: 0.3))
-    ctx.addPath(path)
-    ctx.setFillColor(CGColor(gray: 0.95, alpha: 1))
-    ctx.fillPath()
-    ctx.restoreGState()
-
-    // The tile itself.
-    ctx.saveGState()
-    ctx.addPath(path)
-    ctx.clip()
-    ctx.draw(cropped, in: tileRect)
-    ctx.restoreGState()
-    return ctx.makeImage()!
+    NSGraphicsContext.restoreGraphicsState()
+    return rep.cgImage!
 }
 
 func writePNG(_ image: CGImage, to url: URL) {

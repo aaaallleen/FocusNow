@@ -7,13 +7,25 @@ import SwiftUI
 struct StatsView: View {
     let model: StatsViewModel
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
+    @Bindable var preferences: CalendarPreferences
+
+    static let displaySwitchIdentifier = "stats-display"
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             tiles
             header
-            chart
-                .frame(minHeight: 170, maxHeight: 220)
-            sessionList
+            if preferences.statsDisplay.showsCalendar(for: model.range) {
+                FocusCalendarView(model: model, uses24Hour: FocusCalendarView.systemUses24Hour)
+                    .frame(maxHeight: .infinity)
+            } else {
+                chart
+                    .frame(minHeight: 170, maxHeight: 220)
+                sessionList
+            }
         }
         .padding(20)
         .frame(minWidth: 640, minHeight: 480, alignment: .top)
@@ -26,7 +38,7 @@ struct StatsView: View {
         HStack(spacing: 10) {
             ForEach(StatsRange.allCases, id: \.self) { range in
                 Button { model.range = range } label: { tile(for: range) }
-                    .buttonStyle(TileButtonStyle(selected: model.range == range))
+                    .buttonStyle(TileButtonStyle(selected: model.range == range, accent: colors.focus))
             }
         }
     }
@@ -67,6 +79,16 @@ struct StatsView: View {
             Spacer()
             if model.range != .day {
                 Text(summaryText).font(.system(size: 12)).foregroundStyle(.secondary).monospacedDigit()
+            }
+            if StatsDisplay.offersCalendar(for: model.range) {
+                Picker("Stats view", selection: $preferences.statsDisplay) {
+                    Text("Chart").tag(StatsDisplay.chart)
+                    Text("Calendar").tag(StatsDisplay.calendar)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier(Self.displaySwitchIdentifier)
             }
         }
     }
@@ -110,7 +132,7 @@ struct StatsView: View {
                 BarMark(
                     x: .value("Period", bucket.interval.start, unit: unit),
                     y: .value("Hours", Double(bucket.focusSeconds) / 3600))
-                .foregroundStyle(Theme.focus.opacity(barOpacity(bucket, now: now)))
+                .foregroundStyle(colors.focus.opacity(barOpacity(bucket, now: now)))
                 .cornerRadius(3)
             }
             if let goal {
@@ -231,6 +253,7 @@ private struct SessionRow: View {
 /// A stats tile: a card that shows a focus-coloured border when selected.
 private struct TileButtonStyle: ButtonStyle {
     let selected: Bool
+    let accent: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -239,7 +262,7 @@ private struct TileButtonStyle: ButtonStyle {
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.06)))
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(selected ? Theme.focus : .clear, lineWidth: 1.5))
+                    .strokeBorder(selected ? accent : .clear, lineWidth: 1.5))
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? Theme.pressScale : 1)
             .animation(.easeOut(duration: Theme.pressDuration), value: configuration.isPressed)

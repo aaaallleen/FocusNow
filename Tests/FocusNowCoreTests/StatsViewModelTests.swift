@@ -151,4 +151,41 @@ struct StatsViewModelTests {
         #expect(model.tiles[.day] == .init(focusSeconds: 0, sessionCount: 0))
         #expect(model.listInterval.start == date("2026-11-20T00:00:00Z"))
     }
+
+    // MARK: Calendar view data
+
+    @Test func weekHasSevenFocusDays() {
+        #expect(model.focusDays.map(\.focusSeconds) == [7200, 7200, 5000, 3900, 0, 0, 0])
+        #expect(model.focusDays[3].blocks.count == 2)
+        #expect(model.hourSpan == HourSpan(first: 8, last: 16))
+        #expect(model.monthWeeks.isEmpty)
+    }
+
+    @Test func dayHasOneFocusDay() {
+        model.range = .day
+        #expect(model.focusDays.count == 1)
+        #expect(model.focusDays[0].periods.count == 2)
+        #expect(model.hourSpan == HourSpan(first: 8, last: 14))
+    }
+
+    @Test func monthHasDaysAndWeeks() {
+        model.range = .month
+        #expect(model.focusDays.count == 30)
+        #expect(model.monthWeeks.count == 6)
+    }
+
+    @Test func yearAndAllTimeHaveNone() {
+        for range in [StatsRange.year, .allTime] {
+            model.range = range
+            #expect(model.focusDays.isEmpty)
+            #expect(model.hourSpan == nil)
+            #expect(model.monthWeeks.isEmpty)
+        }
+    }
+
+    @Test func pagingKeepsThemInSync() {
+        model.pageBack()
+        #expect(model.focusDays.first?.day.start == date("2026-11-09T00:00:00Z"))
+        #expect(model.focusDays.map(\.focusSeconds) == [0, 1800, 0, 0, 0, 0, 0])
+    }
 }
