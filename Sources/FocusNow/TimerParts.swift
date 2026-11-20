@@ -98,6 +98,8 @@ struct TimerRing: View {
     var onBeginEditing: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
     @State private var editing = false
     @State private var draft = ""
     @State private var initialDraft = ""
@@ -106,7 +108,7 @@ struct TimerRing: View {
     @Environment(\.pendingEdits) private var pendingEdits
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
-    private var tint: Color { Theme.color(for: engine.displayedKind) }
+    private var tint: Color { ThemeColors(palette, scheme: scheme).color(for: engine.displayedKind) }
     private var digitFont: Font { .system(size: diameter * 34 / 150, weight: .light) }
     private var canEdit: Bool { editable && engine.controls.contains(.adjustLength) }
 
@@ -116,9 +118,11 @@ struct TimerRing: View {
     }
 
     var body: some View {
+        // The stroke is drawn inside the frame, so the frame is the ring you see.
         ZStack {
-            Circle().stroke(Theme.track, lineWidth: lineWidth)
+            Circle().inset(by: lineWidth / 2).stroke(Theme.track, lineWidth: lineWidth)
             Circle()
+                .inset(by: lineWidth / 2)
                 .trim(from: 0, to: progress)
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))
@@ -204,41 +208,56 @@ struct TimerRing: View {
     static let digitsIdentifier = "next-session-length"
 }
 
-/// The buttons for the engine's current state: −/+ and Start, Pause and End early, and so on.
+/// The buttons for the engine's current state, in two rows: the main action
+/// (Start, Pause or Resume) alone on top, the others sharing the row beneath.
+/// Every state has both rows, so nothing below moves when a session starts.
 struct TimerControlsRow: View {
     let engine: TimerEngine
     var onAction: (TimerControl) -> Void = { _ in }
 
     @Environment(\.pendingEdits) private var pendingEdits
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
 
-    private var tint: Color { Theme.color(for: engine.displayedKind) }
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(engine.controls, id: \.self) { control in
-                if control == .adjustLength {
-                    adjustButtons
-                } else {
-                    Button(title(for: control)) { perform(control) }
-                        .buttonStyle(PressableButtonStyle(prominent: isPrimary(control), tint: tint))
+        let rows = engine.controlRows
+        VStack(spacing: 6) {
+            button(rows.main)
+            HStack(spacing: 6) {
+                ForEach(rows.others, id: \.self) { control in
+                    if control == .adjustLength {
+                        adjustButtons
+                    } else {
+                        button(control)
+                    }
                 }
             }
         }
     }
 
+    private func button(_ control: TimerControl) -> some View {
+        Button(Self.title(for: control)) { perform(control) }
+            .buttonStyle(PressableButtonStyle(
+                prominent: isPrimary(control), tint: colors.color(for: engine.displayedKind),
+                text: colors.text(on: engine.displayedKind)))
+    }
+
     private var adjustButtons: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
+            // The glyphs get a text line's height, or the − button (a 2 pt
+            // glyph) would be shorter than the + button and the main button.
             Button { adjust(by: -TimerEngine.adjustStepMinutes) } label: {
-                Image(systemName: "minus")
+                Image(systemName: "minus").frame(height: 15)
             }
             .accessibilityLabel("Five minutes shorter")
             Button { adjust(by: TimerEngine.adjustStepMinutes) } label: {
-                Image(systemName: "plus")
+                Image(systemName: "plus").frame(height: 15)
             }
             .accessibilityLabel("Five minutes longer")
         }
-        .buttonStyle(PressableButtonStyle(compact: true))
-        .fixedSize()
+        .buttonStyle(PressableButtonStyle())
     }
 
     /// Counts as answering a finish, as Start does.
@@ -262,7 +281,7 @@ struct TimerControlsRow: View {
         onAction(control)
     }
 
-    private func title(for control: TimerControl) -> String {
+    static func title(for control: TimerControl) -> String {
         switch control {
         case .startFocus: "Start focus"
         case .startBreak: "Start break"
@@ -307,11 +326,14 @@ struct TodayBar: View {
 struct GoalBar: View {
     let fraction: Double
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.track)
-                Capsule().fill(Theme.focus).frame(width: geo.size.width * fraction)
+                Capsule().fill(ThemeColors(palette, scheme: scheme).focus).frame(width: geo.size.width * fraction)
             }
         }
     }
@@ -320,7 +342,9 @@ struct GoalBar: View {
 /// Every pressable control: scales to 0.97 on press over 0.15 s, ease-out.
 struct PressableButtonStyle: ButtonStyle {
     var prominent = false
-    var tint: Color = Theme.focus
+    var tint: Color = Color(Colorway.standard.palette.focusLight)
+    /// The label colour on a prominent fill.
+    var text: Color = .white
     var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -331,7 +355,7 @@ struct PressableButtonStyle: ButtonStyle {
             .padding(.vertical, 6)
             .padding(.horizontal, compact ? 8 : 6)
             .frame(maxWidth: compact ? nil : .infinity)
-            .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
+            .foregroundStyle(prominent ? AnyShapeStyle(text) : AnyShapeStyle(.primary))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(prominent ? AnyShapeStyle(tint) : AnyShapeStyle(Color.primary.opacity(0.08))))

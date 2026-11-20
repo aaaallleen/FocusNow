@@ -8,8 +8,10 @@ cd "$(dirname "$0")/.."
 swift build -c release --product FocusNow
 BIN="$(swift build -c release --show-bin-path)"
 
-if [ ! -f build/AppIcon.icns ] || [ icon.png -nt build/AppIcon.icns ] || [ scripts/make-icon.swift -nt build/AppIcon.icns ]; then
-    swift scripts/make-icon.swift icon.png build
+# The icon is drawn from Resources/Icon/icon.svg (kept on this Mac, not in git).
+ICON_SVG=Resources/Icon/icon.svg
+if [ ! -f build/AppIcon.icns ] || [ "$ICON_SVG" -nt build/AppIcon.icns ] || [ scripts/make-icon.swift -nt build/AppIcon.icns ]; then
+    swift scripts/make-icon.swift "$ICON_SVG" build
 fi
 
 APP=build/Release.noindex/FocusNow.app
@@ -18,7 +20,24 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/FocusNow" "$APP/Contents/MacOS/FocusNow"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --sign - "$APP"
+# A local certificate (scripts/make-signing-cert.sh) keeps the app's identity
+# the same across builds, so macOS keeps its permissions; otherwise ad hoc.
+IDENTITY="FocusNow Local Signing"
+if [ -n "${FOCUSNOW_SIGNING_KEYCHAIN:-}" ]; then
+    if security find-identity -p codesigning "$FOCUSNOW_SIGNING_KEYCHAIN" 2>/dev/null | grep -q "\"$IDENTITY\""; then
+        codesign --force --sign "$IDENTITY" --keychain "$FOCUSNOW_SIGNING_KEYCHAIN" "$APP"
+        echo "signed with $IDENTITY"
+    else
+        codesign --force --sign - "$APP"
+        echo "signed ad hoc"
+    fi
+elif security find-identity -p codesigning 2>/dev/null | grep -q "\"$IDENTITY\""; then
+    codesign --force --sign "$IDENTITY" "$APP"
+    echo "signed with $IDENTITY"
+else
+    codesign --force --sign - "$APP"
+    echo "signed ad hoc"
+fi
 echo "built $APP"
 
 if [ "${1:-}" = "--install" ]; then

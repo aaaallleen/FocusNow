@@ -20,6 +20,7 @@ public final class StatsViewModel {
     @ObservationIgnored private let clock: () -> Date
     @ObservationIgnored private let calendar: Calendar
     @ObservationIgnored private let calc: StatsCalculator
+    @ObservationIgnored private let focusCalendar: FocusCalendar
     /// A date inside the period being shown.
     @ObservationIgnored private var anchor: Date
     /// True while showing the period containing now; then each reload moves
@@ -37,6 +38,12 @@ public final class StatsViewModel {
     public private(set) var listInterval: DateInterval
     public private(set) var listedSessions: [SessionRecord] = []
     public private(set) var todayGoalSeconds = 0
+    /// The Stats calendar's days for Today, This week and This month; empty for Year and All time.
+    public private(set) var focusDays: [FocusDay] = []
+    /// The hours the Today and This week calendars show; nil with no focus to show.
+    public private(set) var hourSpan: HourSpan?
+    /// This month's days in rows of seven; empty for other ranges.
+    public private(set) var monthWeeks: [[Date?]] = []
 
     public init(sessions: SessionStore, goal: @escaping (Date) -> Int,
                 clock: @escaping () -> Date, calendar: Calendar) {
@@ -45,6 +52,7 @@ public final class StatsViewModel {
         self.clock = clock
         self.calendar = calendar
         self.calc = StatsCalculator(calendar: calendar)
+        self.focusCalendar = FocusCalendar(calendar: calendar)
         let now = clock()
         self.anchor = now
         self.interval = DateInterval(start: now, duration: 0)
@@ -114,6 +122,7 @@ public final class StatsViewModel {
         intervalSessions = store.sessions(in: interval)
         buckets = calc.buckets(for: currentRange, interval: interval, sessions: intervalSessions, goal: goal)
         summary = calc.summary(interval: interval, sessions: intervalSessions, today: now, goal: goal)
+        updateCalendar()
         updateList()
     }
 
@@ -127,6 +136,18 @@ public final class StatsViewModel {
         case .year: .year
         case .allTime: nil
         }
+    }
+
+    private func updateCalendar() {
+        guard StatsDisplay.offersCalendar(for: currentRange) else {
+            focusDays = []
+            hourSpan = nil
+            monthWeeks = []
+            return
+        }
+        focusDays = focusCalendar.days(in: interval, sessions: intervalSessions)
+        hourSpan = focusCalendar.hourSpan(focusDays.flatMap(\.blocks))
+        monthWeeks = currentRange == .month ? focusCalendar.monthWeeks(interval) : []
     }
 
     private func updateList() {

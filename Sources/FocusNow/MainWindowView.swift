@@ -19,18 +19,32 @@ struct MainWindowView: View {
     let engine: TimerEngine
     let settings: SettingsStore
     let statsModel: StatsViewModel
+    let calendarModel: CalendarModel
+    let calendarPrefs: CalendarPreferences
+    let appearance: AppearancePreferences
     var onAction: (TimerControl) -> Void = { _ in }
 
     var body: some View {
         Group {
             switch state.page {
-            case .timer: TimerPageView(engine: engine, settings: settings, onAction: onAction)
-            case .stats: StatsView(model: statsModel)
-            case .settings: SettingsView(settings: settings, state: state)
+            case .timer:
+                TimerPageView(
+                    engine: engine, settings: settings, calendarModel: calendarModel, calendarPrefs: calendarPrefs,
+                    onAction: onAction,
+                    onShowCalendarSettings: {
+                        state.settingsSection = .calendar
+                        state.page = .settings
+                    })
+            case .stats: StatsView(model: statsModel, preferences: calendarPrefs)
+            case .settings:
+                SettingsView(
+                    settings: settings, state: state, calendarModel: calendarModel, calendarPrefs: calendarPrefs,
+                    appearance: appearance)
             }
         }
         .frame(minWidth: 640, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.palette, appearance.palette)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Page", selection: $state.page) {

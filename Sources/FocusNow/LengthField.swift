@@ -17,7 +17,8 @@ struct LengthField: View {
     let parse: (String) -> Int?
     let format: (Int) -> String
     var fieldWidth: CGFloat = 52
-    /// A fixed unit width lines up the steppers of rows with different units.
+    /// A fixed unit width lines up the steppers of rows with different units;
+    /// the unit sits at its right, next to the stepper.
     var unitWidth: CGFloat?
 
     @State private var text = ""
@@ -54,7 +55,7 @@ struct LengthField: View {
                 Text(unit)
                     .foregroundStyle(.secondary)
                     .fixedSize()
-                    .frame(width: unitWidth, alignment: .leading)
+                    .frame(width: unitWidth, alignment: .trailing)
                     .accessibilityHidden(true) // the field's value reads with its unit below
             }
             Stepper(label, value: stepperValue, in: range, step: step)

@@ -83,3 +83,12 @@ func freshDefaults() -> UserDefaults {
 @MainActor func makeEngine(at iso: String = "2026-11-19T09:00:00Z") -> Harness {
     Harness(at: iso)
 }
+
+/// A timed calendar event; times are ISO 8601 ("2026-11-19T10:00:00Z").
+func event(_ id: String, _ start: String, _ end: String, calendar: String = "work", title: String? = nil,
+           allDay: Bool = false, declined: Bool = false, cancelled: Bool = false) -> CalendarEvent {
+    CalendarEvent(
+        id: id, calendarID: calendar, title: title ?? id, start: date(start), end: date(end),
+        isAllDay: allDay, isDeclined: declined, isCancelled: cancelled,
+        color: CalendarColor(red: 0.2, green: 0.4, blue: 0.6))
+}

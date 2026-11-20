@@ -6,6 +6,17 @@ public enum TimerControl: Equatable, Sendable {
     case pause, resume, endEarly, cancel, skip
 }
 
+/// The buttons in two rows: the main action alone on top, the rest beneath.
+public struct ControlRows: Equatable, Sendable {
+    public var main: TimerControl
+    public var others: [TimerControl]
+
+    public init(main: TimerControl, others: [TimerControl]) {
+        self.main = main
+        self.others = others
+    }
+}
+
 extension TimerEngine {
     public static let adjustStepMinutes = 5
     public static let adjustRangeMinutes = TimerSettings.minuteRange
@@ -38,22 +49,35 @@ extension TimerEngine {
         }
     }
 
-    /// Changes only the next focus session's length, in steps within 1–180 minutes.
+    /// `controls` split into rows: start, pause or resume on top, the rest beneath.
+    public var controlRows: ControlRows {
+        let all = controls
+        let mainControls: [TimerControl] = [.startFocus, .startBreak, .pause, .resume]
+        guard let main = all.first(where: mainControls.contains) else {
+            return ControlRows(main: all[0], others: Array(all.dropFirst()))
+        }
+        return ControlRows(main: main, others: all.filter { $0 != main })
+    }
+
+    /// Changes the set focus length in steps, within 1–180 minutes.
     public func adjustNextFocus(byMinutes delta: Int) {
         guard status == .idle, nextKind == .focus else { return }
         setNextFocus(minutes: plannedSecondsForNext / 60 + delta)
     }
 
-    /// Sets only the next focus session's length, in whole minutes clamped to
-    /// 1–180. Does nothing unless idle with a focus session next.
+    /// Sets the focus length, in whole minutes clamped to 1–180, until it's set
+    /// again or the Focus default changes. Does nothing unless idle with a
+    /// focus session next. Saved, so it survives a relaunch.
     public func setNextFocus(minutes: Int) {
         guard status == .idle, nextKind == .focus else { return }
         nextFocusSecondsOverride = minutes.clamped(to: Self.adjustRangeMinutes) * 60
+        saveSnapshot()
     }
 
-    /// The owner changed the Focus default: a one-off set against the old default
+    /// The owner changed the Focus default: a length set against the old default
     /// no longer applies, even if the default is changed back before the next tick.
     public func focusDefaultChanged() {
         nextFocusSecondsOverride = nil
+        saveSnapshot()
     }
 }

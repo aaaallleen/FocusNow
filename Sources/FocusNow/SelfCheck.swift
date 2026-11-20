@@ -8,13 +8,15 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "timer", "digits", "commits", "outside", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "menubar", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
             "iconFile=\(Bundle.main.url(forResource: "AppIcon", withExtension: "icns") != nil)")
         if phases.contains("stats") { await checkStats(snap) }
         if phases.contains("settings") { await checkSettings(snap) }
+        if phases.contains("calendar") { await checkCalendar(snap) }
+        if phases.contains("appearance") { await checkAppearance(snap) }
         if phases.contains("timer") { await checkTimer(snap) }
         if phases.contains("digits") { await checkDigits(snap) }
         if phases.contains("commits") { await checkCommits(snap) }
@@ -22,8 +24,10 @@ extension AppDelegate {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
                 "idleRemaining=\(engine.remainingSeconds) goalHistory=\(settings.goalHistory.count) " +
-                "loginItemStatus=\(SMAppService.mainApp.status.rawValue)")
+                "loginItemStatus=\(SMAppService.mainApp.status.rawValue) statsDisplay=\(calendarPrefs.statsDisplay) " +
+                "mode=\(appearancePrefs.mode) colorway=\(appearancePrefs.colorwayID)")
         }
+        if phases.contains("menubar") { await checkMenuBar(snap) }
         if phases.contains("outside") { await checkOutside(snap) }
         // Last: it quits with a session running, for the persist phase's relaunch.
         if phases.contains("popover") { await checkPopover(snap) }
@@ -136,7 +140,7 @@ extension AppDelegate {
                 .joined(separator: " ")
         }
         snap.note("tiles: \(tiles())")
-        let view = { StatsView(model: self.statsModel).frame(width: 760, height: 560) }
+        let view = { StatsView(model: self.statsModel, preferences: self.calendarPrefs).frame(width: 760, height: 560) }
         snap.render(view(), as: "stats-week")
         snap.render(view(), as: "stats-week-dark", dark: true)
         snap.note("week: buckets=\(statsModel.buckets.count) summary=\(statsModel.summary) listed=\(statsModel.listedSessions.count)")
@@ -185,6 +189,7 @@ extension AppDelegate {
         let before = statsModel.tiles[.day]?.sessionCount ?? -1
         engine.nextFocusSecondsOverride = 2
         engine.start()
+        engine.nextFocusSecondsOverride = nil // a set length stays; only this session is short
         await snap.wait(3.0)
         engine.acknowledge()
         statusItem.closePopover()
@@ -411,6 +416,7 @@ extension AppDelegate {
         for line in snap.spoken(roles: ["AXButton", "AXTextField", "AXIncrementor"], in: window) {
             snap.note("voiceover: \(line)")
         }
+        noteControlRows(snap, in: window, "idle")
         window.appearance = NSAppearance(named: .aqua)
         await shot("timer-idle")
         window.appearance = NSAppearance(named: .darkAqua)
@@ -422,10 +428,12 @@ extension AppDelegate {
         engine.start()
         await snap.wait(0.6)
         snap.note("running fields=\(fields()) inSession=\(engine.isInSession) ring idle=\(idleRing) running=\(ring()) (want 0 true, equal)")
+        noteControlRows(snap, in: window, "running")
         await shot("timer-running")
         engine.pause()
         await snap.wait(0.4)
         snap.note("paused fields=\(fields())")
+        noteControlRows(snap, in: window, "paused")
         await shot("timer-paused")
         engine.cancel()
         await snap.wait(0.6)
@@ -444,6 +452,7 @@ extension AppDelegate {
         await snap.wait(0.5)
         let idleMinRing = ring()
         snap.note("min size fields=\(fields()) content=\(window.contentView?.bounds.size ?? .zero)")
+        noteControlRows(snap, in: window, "min size idle")
         await shot("timer-idle-min")
         engine.start()
         await snap.wait(0.6)
@@ -458,6 +467,8 @@ extension AppDelegate {
         snap.note("large content=\(window.contentView?.bounds.size ?? .zero) remaining=\(TimeFormat.clock(engine.remainingSeconds))")
         await shot("timer-running-large")
         engine.cancel()
+
+        await checkRingGaps(snap, in: window)
         window.setContentSize(NSSize(width: 760, height: 560))
         await snap.wait(0.4)
     }
@@ -518,7 +529,7 @@ extension AppDelegate {
         if await edit("180", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
         snap.note("digits 180 → \(TimeFormat.clock(remaining()))")
         if let frameView = window.contentView?.superview { snap.capture(frameView, as: "timer-idle-180", scale: 1) }
-        snap.render(PopoverView(engine: engine, settings: settings), as: "popover-180")
+        snap.render(PopoverView(engine: engine, settings: settings, appearance: appearancePrefs), as: "popover-180")
         engine.setNextFocus(minutes: 40)
 
         // In the popover.
@@ -539,7 +550,7 @@ extension AppDelegate {
         statusItem.closePopover()
         await snap.wait(0.5)
         snap.note("popover closed mid-edit → \(remaining())")
-        engine.setNextFocus(minutes: 40)
+        engine.focusDefaultChanged() // later phases start from the default length
         await snap.wait(1.0) // the popover reports itself shown for a moment after closing
     }
 
@@ -577,6 +588,9 @@ extension AppDelegate {
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Start focus", in: window)
         snap.note("digits 25 then Start → planned=\(planned())")
+        engine.cancel()
+        await snap.wait(0.3)
+        snap.note("after cancel remaining=\(TimeFormat.clock(engine.remainingSeconds)) (want 25:00, the typed length stays)")
         await reset()
         await typeDigits("25")
         _ = await snap.press(accessibilityLabel: "Five minutes longer", in: window)
@@ -593,12 +607,14 @@ extension AppDelegate {
         // A finish opens the popover; answering in the window closes it.
         engine.nextFocusSecondsOverride = 2
         engine.start()
+        engine.nextFocusSecondsOverride = nil // a set length stays; only this session is short
         await snap.wait(3.0)
         snap.note("finished: popoverVisible=\(statusItem.popoverWindowVisible) closesOnOutsideClick=\(statusItem.closesOnOutsideClick)")
         _ = await snap.press(accessibilityLabel: "Start break", in: window)
         await snap.wait(0.6)
         snap.note("Start break in window → popoverVisible=\(statusItem.popoverWindowVisible) status=\(engine.status) phase=\"\(engine.phaseLabel)\"")
         engine.skipBreak()
+        engine.focusDefaultChanged() // later phases start from the default length
         await snap.wait(1.0)
     }
 
@@ -614,14 +630,121 @@ extension AppDelegate {
         return handled
     }
 
-    private func closeAllWindows() {
+    /// At every window size, with and without today's events, the ring keeps
+    /// at least 22 pt from the phase label above it and the buttons below it,
+    /// and the whole column stays inside the window.
+    func checkRingGaps(_ snap: DebugSnapshots, in window: NSWindow) async {
+        if let fake = calendarSource as? FakeCalendarSource {
+            fake.access = .granted
+            seedCalendar(fake)
+            calendarModel.refresh()
+        }
+        let titleBar = window.frame.height - window.contentLayoutRect.height
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
+        let sizes = [NSSize(width: 640, height: 480), NSSize(width: 760, height: 560), NSSize(width: 1400, height: 900),
+                     NSSize(width: screen.width, height: screen.height - titleBar)]
+        for size in sizes {
+            for events in [true, false] {
+                calendarPrefs.showOnTimerPage = events
+                window.setContentSize(size)
+                await snap.wait(0.5)
+                let content = window.contentView.map { window.convertToScreen($0.convert($0.bounds, to: nil)) } ?? .zero
+                let label = snap.readable(in: window).first { $0.text == engine.phaseLabel }?.frame
+                let ring = visibleRing(snap, in: window)
+                let main = snap.accessibilityFrame(of: TimerControlsRow.title(for: engine.controlRows.main), in: window)
+                let lowest = snap.readable(in: window).map(\.frame).filter { $0.width > 0 && $0.minY < content.maxY }
+                    .map(\.minY).min() ?? 0
+                let name = "\(Int(window.contentView?.bounds.width ?? 0))x\(Int(window.contentView?.bounds.height ?? 0))"
+                guard let label, let ring, let main else {
+                    snap.note("gaps \(name) events=\(events ? "on" : "off"): label=\(label != nil) ring=\(ring != nil) " +
+                        "main=\(main != nil) (want all true)")
+                    continue
+                }
+                snap.note("gaps \(name) events=\(events ? "on" : "off"): above=\(Int((label.minY - ring.maxY).rounded())) " +
+                    "below=\(Int((ring.minY - main.maxY).rounded())) ring=\(Int(ring.height)) " +
+                    "fits=\(lowest >= content.minY - 0.5) (want ≥22 ≥22 ≥120 true)")
+                if size == sizes.last, events {
+                    window.appearance = NSAppearance(named: .aqua)
+                    await snap.wait(0.2)
+                    if let frameView = window.contentView?.superview { snap.capture(frameView, as: "timer-full-size", scale: 0.5) }
+                    window.appearance = nil
+                }
+            }
+        }
+        calendarPrefs.showOnTimerPage = true
+    }
+
+    /// The ring as drawn, in screen coordinates: from the digits' centre, up and
+    /// down through the empty inside of the ring to the outer edge of its stroke.
+    /// Measured from pixels, so a stroke drawn outside the layout frame counts.
+    func visibleRing(_ snap: DebugSnapshots, in window: NSWindow) -> NSRect? {
+        guard let view = window.contentView,
+              let digits = snap.accessibilityFrame(of: TimerRing.digitsIdentifier, in: window),
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+        // Pixel rows run top-down; screen y runs bottom-up.
+        let viewRect = view.convert(window.convertFromScreen(digits), from: nil)
+        let x = Int(viewRect.midX * scale)
+        func row(_ viewY: CGFloat) -> Int { Int((view.isFlipped ? viewY : view.bounds.height - viewY) * scale) }
+        let background = rep.colorAt(x: 2, y: row(viewRect.midY))?.usingColorSpace(.sRGB)
+        func drawn(_ y: Int) -> Bool {
+            guard y >= 0, y < rep.pixelsHigh, let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), let b = background else { return false }
+            return max(abs(c.redComponent - b.redComponent), abs(c.greenComponent - b.greenComponent),
+                       abs(c.blueComponent - b.blueComponent)) > 0.03
+        }
+        let digitsTop = min(row(viewRect.minY), row(viewRect.maxY)), digitsBottom = max(row(viewRect.minY), row(viewRect.maxY))
+        // Outwards from the digits: past the empty inside, through the stroke, to the first empty row.
+        func edge(from start: Int, step: Int) -> Int? {
+            var y = start
+            while y >= 0, y < rep.pixelsHigh, !drawn(y) { y += step }
+            guard drawn(y) else { return nil }
+            while y >= 0, y < rep.pixelsHigh, drawn(y) { y += step }
+            return y - step
+        }
+        guard let top = edge(from: digitsTop - 2, step: -1), let bottom = edge(from: digitsBottom + 2, step: 1) else { return nil }
+        // Back to screen coordinates.
+        func screenY(_ pixelRow: Int) -> CGFloat {
+            let viewY = CGFloat(pixelRow) / scale
+            let flippedY = view.isFlipped ? viewY : view.bounds.height - viewY
+            return window.convertToScreen(view.convert(NSRect(x: 0, y: flippedY, width: 0, height: 0), to: nil)).minY
+        }
+        let (a, b) = (screenY(top), screenY(bottom + 1))
+        return NSRect(x: digits.midX, y: min(a, b), width: 0, height: abs(a - b))
+    }
+
+    /// The main button alone on the top row, the others sharing the row beneath it.
+    func noteControlRows(_ snap: DebugSnapshots, in window: NSWindow, _ label: String) {
+        let rows = engine.controlRows
+        let otherTitles = rows.others.flatMap { control in
+            control == .adjustLength ? ["Five minutes shorter", "Five minutes longer"] : [TimerControlsRow.title(for: control)]
+        }
+        let mainTitle = TimerControlsRow.title(for: rows.main)
+        guard let main = snap.accessibilityFrame(of: mainTitle, in: window) else {
+            snap.note("\(label) rows: no \"\(mainTitle)\" button")
+            return
+        }
+        let others = otherTitles.compactMap { snap.accessibilityFrame(of: $0, in: window) }
+        guard others.count == otherTitles.count, let first = others.first else {
+            snap.note("\(label) rows: missing one of \(otherTitles)")
+            return
+        }
+        // Screen coordinates: y grows upwards, so the row beneath has the smaller y.
+        let below = others.allSatisfy { abs($0.midY - first.midY) < 0.5 && $0.maxY <= main.minY }
+        let sum = others.reduce(0) { $0 + $1.width } + CGFloat(others.count - 1) * 6
+        snap.note("\(label) rows: main=\(mainTitle) w=\(Int(main.width)) h=\(Int(main.height)) gap=\(Int((main.minY - first.maxY).rounded())) others=\(otherTitles) " +
+            "w=\(others.map { Int($0.width) }) h=\(others.map { Int($0.height) }) below=\(below) sum=\(Int(sum.rounded())) " +
+            "(want sum == main w, every h == main h, below true)")
+    }
+
+    func closeAllWindows() {
         for window in NSApp.windows where window.isVisible && window.title.isEmpty == false {
             window.performClose(nil)
         }
     }
 
     /// About six weeks of plausible history, so the stats window has something to show.
-    private func seedHistory() {
+    func seedHistory() {
         let calendar = Calendar.autoupdatingCurrent
         let today = calendar.startOfDay(for: Date())
         for back in 1...45 {
@@ -650,7 +773,7 @@ extension AppDelegate {
 
     func checkPopover(_ snap: DebugSnapshots) async {
         snap.note("== popover ==")
-        let popover = { PopoverView(engine: self.engine, settings: self.settings) }
+        let popover = { PopoverView(engine: self.engine, settings: self.settings, appearance: self.appearancePrefs) }
         func menubar(_ label: String) { snap.note("\(label): " + DebugSnapshots.describe(statusItem.button)) }
         func state(_ label: String) {
             snap.note("\(label): status=\(engine.status) phase=\"\(engine.phaseLabel)\" controls=\(engine.controls) " +
@@ -672,6 +795,7 @@ extension AppDelegate {
         statusItem.clicked()
         await snap.wait(0.1)
         snap.note("click 1: popoverVisible=\(statusItem.popoverWindowVisible) closesOnOutsideClick=\(statusItem.closesOnOutsideClick) active=\(NSApp.isActive)")
+        if let popoverWindow = statusItem.popoverWindow { noteControlRows(snap, in: popoverWindow, "popover idle") }
         await snap.wait(1.0)
         statusItem.clicked()
         snap.note("click 2: popoverVisible=\(statusItem.popoverWindowVisible)")
@@ -679,6 +803,7 @@ extension AppDelegate {
         // A 3-second focus session to exercise the finish flow.
         engine.nextFocusSecondsOverride = 3
         engine.start()
+        engine.nextFocusSecondsOverride = nil // a set length stays; only this session is short
         await snap.wait(1.2)
         state("focus running")
         menubar("menubar focus")
@@ -691,6 +816,7 @@ extension AppDelegate {
         engine.resume()
         await snap.wait(3.0)
         state("focus finished")
+        if let popoverWindow = statusItem.popoverWindow { noteControlRows(snap, in: popoverWindow, "popover break pending") }
         snap.note("sound would play: \(settings.settings.soundOn && NSSound(named: FinishAlerter.soundName) != nil)")
         snap.note("finished popover closesOnOutsideClick=\(statusItem.closesOnOutsideClick) " +
             "frontmost=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")

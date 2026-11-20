@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The sections of the Settings page, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case cycle, goal, general
+    case cycle, goal, general, calendar, appearance
 
     var id: Self { self }
 
@@ -13,6 +13,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .cycle: "Cycle"
         case .goal: "Goal"
         case .general: "General"
+        case .calendar: "Calendar"
+        case .appearance: "Appearance"
         }
     }
 
@@ -21,6 +23,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .cycle: "arrow.triangle.2.circlepath"
         case .goal: "target"
         case .general: "gearshape"
+        case .calendar: "calendar"
+        case .appearance: "paintpalette"
         }
     }
 }
@@ -30,13 +34,24 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 struct SettingsView: View {
     @Bindable var settings: SettingsStore
     @Bindable var state: MainWindowState
+    let calendarModel: CalendarModel
+    let calendarPrefs: CalendarPreferences
+    let appearance: AppearancePreferences
+
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
 
     var body: some View {
         HStack(spacing: 0) {
             List(selection: selection) {
                 ForEach(SettingsSection.allCases) { section in
-                    Label(section.title, systemImage: section.symbol)
-                        .tag(section)
+                    Label {
+                        Text(section.title)
+                    } icon: {
+                        Image(systemName: section.symbol).foregroundStyle(colors.focus)
+                    }
+                    .tag(section)
                 }
             }
             .listStyle(.sidebar)
@@ -57,6 +72,8 @@ struct SettingsView: View {
         case .cycle: CyclePane(settings: settings)
         case .goal: GoalPane(settings: settings)
         case .general: GeneralPane(settings: settings)
+        case .calendar: CalendarPane(model: calendarModel, preferences: calendarPrefs)
+        case .appearance: AppearancePane(preferences: appearance)
         }
     }
 }
