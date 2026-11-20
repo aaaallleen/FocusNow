@@ -118,9 +118,11 @@ struct TimerRing: View {
     }
 
     var body: some View {
+        // The stroke is drawn inside the frame, so the frame is the ring you see.
         ZStack {
-            Circle().stroke(Theme.track, lineWidth: lineWidth)
+            Circle().inset(by: lineWidth / 2).stroke(Theme.track, lineWidth: lineWidth)
             Circle()
+                .inset(by: lineWidth / 2)
                 .trim(from: 0, to: progress)
                 .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
                 .rotationEffect(.degrees(-90))

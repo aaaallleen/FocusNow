@@ -21,9 +21,11 @@ struct TimerPageView: View {
             let eventsHeight = calendarPrefs.showOnTimerPage
                 ? UpcomingEventsView.height(model: calendarModel, rowLimit: rowLimit) : nil
             VStack(spacing: TimerPageLayout.spacing) {
+                let diameter = TimerPageLayout.diameter(for: size, eventsHeight: eventsHeight)
                 PhaseLabel(engine: engine, size: 13)
-                TimerRing(engine: engine, diameter: TimerPageLayout.diameter(for: size, eventsHeight: eventsHeight),
-                          editable: true)
+                TimerRing(engine: engine, diameter: diameter, editable: true)
+                    // A bigger ring gets more room above and below.
+                    .padding(.vertical, TimerPageLayout.ringGap(for: diameter) - TimerPageLayout.spacing)
                 TimerControlsRow(engine: engine, onAction: onAction)
                     .frame(maxWidth: 320)
                 TodayBar(engine: engine, settings: settings)
@@ -65,8 +67,24 @@ enum TimerPageLayout {
         } ?? 1
     }
 
+    /// Of the ring's diameter, the share kept free above it and below it.
+    private static let ringGapShare: CGFloat = 0.12
+
+    /// The room above and below the ring: `spacing` for small rings, growing
+    /// with bigger ones.
+    static func ringGap(for diameter: CGFloat) -> CGFloat {
+        max(spacing, diameter * ringGapShare)
+    }
+
     private static func rawDiameter(for size: CGSize, eventsHeight: CGFloat?) -> CGFloat {
         let below = reserved + (eventsHeight.map { $0 + spacing } ?? 0)
-        return min(min(size.width, size.height) * 0.7, size.height - below)
+        // The ring plus its two growing gaps (beyond `spacing` each) must fit
+        // in what's left. The gaps start growing once the ring passes
+        // spacing / share (about 183 pt).
+        let available = size.height - below
+        let fit = available <= spacing / ringGapShare
+            ? available
+            : (available + 2 * spacing) / (1 + 2 * ringGapShare)
+        return min(min(size.width, size.height) * 0.7, fit)
     }
 }

@@ -466,6 +466,8 @@ extension AppDelegate {
         snap.note("large content=\(window.contentView?.bounds.size ?? .zero) remaining=\(TimeFormat.clock(engine.remainingSeconds))")
         await shot("timer-running-large")
         engine.cancel()
+
+        await checkRingGaps(snap, in: window)
         window.setContentSize(NSSize(width: 760, height: 560))
         await snap.wait(0.4)
     }
@@ -620,6 +622,89 @@ extension AppDelegate {
         let handled = NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
         try? await Task.sleep(for: .seconds(0.4))
         return handled
+    }
+
+    /// At every window size, with and without today's events, the ring keeps
+    /// at least 22 pt from the phase label above it and the buttons below it,
+    /// and the whole column stays inside the window.
+    func checkRingGaps(_ snap: DebugSnapshots, in window: NSWindow) async {
+        if let fake = calendarSource as? FakeCalendarSource {
+            fake.access = .granted
+            seedCalendar(fake)
+            calendarModel.refresh()
+        }
+        let titleBar = window.frame.height - window.contentLayoutRect.height
+        let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
+        let sizes = [NSSize(width: 640, height: 480), NSSize(width: 760, height: 560), NSSize(width: 1400, height: 900),
+                     NSSize(width: screen.width, height: screen.height - titleBar)]
+        for size in sizes {
+            for events in [true, false] {
+                calendarPrefs.showOnTimerPage = events
+                window.setContentSize(size)
+                await snap.wait(0.5)
+                let content = window.contentView.map { window.convertToScreen($0.convert($0.bounds, to: nil)) } ?? .zero
+                let label = snap.readable(in: window).first { $0.text == engine.phaseLabel }?.frame
+                let ring = visibleRing(snap, in: window)
+                let main = snap.accessibilityFrame(of: TimerControlsRow.title(for: engine.controlRows.main), in: window)
+                let lowest = snap.readable(in: window).map(\.frame).filter { $0.width > 0 && $0.minY < content.maxY }
+                    .map(\.minY).min() ?? 0
+                let name = "\(Int(window.contentView?.bounds.width ?? 0))x\(Int(window.contentView?.bounds.height ?? 0))"
+                guard let label, let ring, let main else {
+                    snap.note("gaps \(name) events=\(events ? "on" : "off"): label=\(label != nil) ring=\(ring != nil) " +
+                        "main=\(main != nil) (want all true)")
+                    continue
+                }
+                snap.note("gaps \(name) events=\(events ? "on" : "off"): above=\(Int((label.minY - ring.maxY).rounded())) " +
+                    "below=\(Int((ring.minY - main.maxY).rounded())) ring=\(Int(ring.height)) " +
+                    "fits=\(lowest >= content.minY - 0.5) (want ≥22 ≥22 ≥120 true)")
+                if size == sizes.last, events {
+                    window.appearance = NSAppearance(named: .aqua)
+                    await snap.wait(0.2)
+                    if let frameView = window.contentView?.superview { snap.capture(frameView, as: "timer-full-size", scale: 0.5) }
+                    window.appearance = nil
+                }
+            }
+        }
+        calendarPrefs.showOnTimerPage = true
+    }
+
+    /// The ring as drawn, in screen coordinates: from the digits' centre, up and
+    /// down through the empty inside of the ring to the outer edge of its stroke.
+    /// Measured from pixels, so a stroke drawn outside the layout frame counts.
+    func visibleRing(_ snap: DebugSnapshots, in window: NSWindow) -> NSRect? {
+        guard let view = window.contentView,
+              let digits = snap.accessibilityFrame(of: TimerRing.digitsIdentifier, in: window),
+              let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        let scale = CGFloat(rep.pixelsWide) / view.bounds.width
+        // Pixel rows run top-down; screen y runs bottom-up.
+        let viewRect = view.convert(window.convertFromScreen(digits), from: nil)
+        let x = Int(viewRect.midX * scale)
+        func row(_ viewY: CGFloat) -> Int { Int((view.isFlipped ? viewY : view.bounds.height - viewY) * scale) }
+        let background = rep.colorAt(x: 2, y: row(viewRect.midY))?.usingColorSpace(.sRGB)
+        func drawn(_ y: Int) -> Bool {
+            guard y >= 0, y < rep.pixelsHigh, let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), let b = background else { return false }
+            return max(abs(c.redComponent - b.redComponent), abs(c.greenComponent - b.greenComponent),
+                       abs(c.blueComponent - b.blueComponent)) > 0.03
+        }
+        let digitsTop = min(row(viewRect.minY), row(viewRect.maxY)), digitsBottom = max(row(viewRect.minY), row(viewRect.maxY))
+        // Outwards from the digits: past the empty inside, through the stroke, to the first empty row.
+        func edge(from start: Int, step: Int) -> Int? {
+            var y = start
+            while y >= 0, y < rep.pixelsHigh, !drawn(y) { y += step }
+            guard drawn(y) else { return nil }
+            while y >= 0, y < rep.pixelsHigh, drawn(y) { y += step }
+            return y - step
+        }
+        guard let top = edge(from: digitsTop - 2, step: -1), let bottom = edge(from: digitsBottom + 2, step: 1) else { return nil }
+        // Back to screen coordinates.
+        func screenY(_ pixelRow: Int) -> CGFloat {
+            let viewY = CGFloat(pixelRow) / scale
+            let flippedY = view.isFlipped ? viewY : view.bounds.height - viewY
+            return window.convertToScreen(view.convert(NSRect(x: 0, y: flippedY, width: 0, height: 0), to: nil)).minY
+        }
+        let (a, b) = (screenY(top), screenY(bottom + 1))
+        return NSRect(x: digits.midX, y: min(a, b), width: 0, height: abs(a - b))
     }
 
     /// The main button alone on the top row, the others sharing the row beneath it.
