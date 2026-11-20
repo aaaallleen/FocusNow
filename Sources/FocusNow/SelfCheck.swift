@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "outside", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "menubar", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -27,6 +27,7 @@ extension AppDelegate {
                 "loginItemStatus=\(SMAppService.mainApp.status.rawValue) statsDisplay=\(calendarPrefs.statsDisplay) " +
                 "mode=\(appearancePrefs.mode) colorway=\(appearancePrefs.colorwayID)")
         }
+        if phases.contains("menubar") { await checkMenuBar(snap) }
         if phases.contains("outside") { await checkOutside(snap) }
         // Last: it quits with a session running, for the persist phase's relaunch.
         if phases.contains("popover") { await checkPopover(snap) }

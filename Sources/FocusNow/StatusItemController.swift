@@ -211,19 +211,26 @@ final class StatusItemController: NSObject {
         case .running: (symbol, description) = ("hourglass", "Focusing")
         case .idle: (symbol, description) = ("hourglass", waiting ? "Finished" : "FocusNow")
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)?
+        let symbolImage = NSImage(systemSymbolName: symbol, accessibilityDescription: description)?
             .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        // pause.fill draws 1 pt below the bar's centre where the others don't.
+        let image = symbolImage.map { symbol == "pause.fill" ? Self.raised($0, by: 1) : $0 }
         image?.isTemplate = true
         button.image = image
 
         if status == .idle && !waiting {
             button.attributedTitle = NSAttributedString(string: "")
-            button.imagePosition = .imageOnly
+            // Not .imageOnly: that lifts the glyph 1 pt above the bar's centre
+            // (the button grows taller than the bar), so it would also jump
+            // when a countdown appears beside it.
+            button.imagePosition = .imageLeading
             button.contentTintColor = nil
         } else {
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-                .baselineOffset: 0.5,
+                // Lowers the digits onto the glyph's centre line; by default
+                // they sit about 2 pt above it.
+                .baselineOffset: -1.0,
             ]
             let isBreak = kind.isBreak && status == .running
             let p = palette()
@@ -236,6 +243,17 @@ final class StatusItemController: NSObject {
         }
         button.appearsDisabled = status == .paused
         setFlashing(engine.needsAttention)
+    }
+
+    /// `image` drawn `points` higher: padded below, so centring the taller image lifts the glyph.
+    private static func raised(_ image: NSImage, by points: CGFloat) -> NSImage {
+        let size = NSSize(width: image.size.width, height: image.size.height + 2 * points)
+        let raised = NSImage(size: size, flipped: false) { _ in
+            image.draw(in: NSRect(x: 0, y: 2 * points, width: image.size.width, height: image.size.height))
+            return true
+        }
+        raised.accessibilityDescription = image.accessibilityDescription
+        return raised
     }
 
     // MARK: - Flash
