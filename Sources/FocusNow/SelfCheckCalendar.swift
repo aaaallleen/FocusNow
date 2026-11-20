@@ -174,7 +174,7 @@ extension AppDelegate {
         let more = calendarModel.upcoming.moreCount
 
         snap.note("timer events: rows=\(rows().count) first=\"\(rows().first?.text ?? "-")\" " +
-            "more=\(more) shown=\(shows("+\(more) more")) (want 3 \"Now, Standup, until …\" >0 true)")
+            "more=\(more) shown=\(shows("+\(more) more")) (want 3 \"… to …, Standup, now\" >0 true)")
         window.appearance = NSAppearance(named: .aqua)
         await shot("timer-events")
         window.appearance = NSAppearance(named: .darkAqua)

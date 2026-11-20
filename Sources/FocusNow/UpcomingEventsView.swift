@@ -63,31 +63,36 @@ private struct EventRow: View {
     @Environment(\.colorScheme) private var scheme
 
     private var title: String { row.event.title.isEmpty ? "No title" : row.event.title }
-    private var lead: String { row.isNow ? "Now" : Self.time(row.event.start) }
-    private var trail: String { (row.isNow ? "until " : "to ") + Self.time(row.event.end) }
-
-    /// The system's short time, which follows its 12/24-hour setting.
-    private static func time(_ date: Date) -> String { date.formatted(date: .omitted, time: .shortened) }
+    /// "1:30 – 3:47 PM", in the system's style and 12/24-hour setting.
+    private var range: String {
+        EventTimeText.range(row.event, calendar: .autoupdatingCurrent, locale: .autoupdatingCurrent)
+    }
+    private var spoken: String {
+        EventTimeText.spoken(row.event, calendar: .autoupdatingCurrent, locale: .autoupdatingCurrent)
+    }
 
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(Color(row.event.color)).frame(width: 7, height: 7)
-            Text(lead)
-                .fontWeight(row.isNow ? .semibold : .regular)
-                .foregroundStyle(row.isNow ? AnyShapeStyle(ThemeColors(palette, scheme: scheme).focus) : AnyShapeStyle(.secondary))
+            Text(range)
+                .foregroundStyle(.secondary)
                 .monospacedDigit()
-                .frame(width: 62, alignment: .leading)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(width: 118, alignment: .leading)
             Text(title)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
-            Text(trail)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .fixedSize()
+            if row.isNow {
+                Text("Now")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(ThemeColors(palette, scheme: scheme).focus)
+                    .fixedSize()
+            }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(lead), \(title), \(trail)")
+        .accessibilityLabel("\(spoken), \(title)" + (row.isNow ? ", now" : ""))
         .accessibilityIdentifier(UpcomingEventsView.rowIdentifier)
     }
 }
