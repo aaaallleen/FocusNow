@@ -138,4 +138,18 @@ struct TimerControlsTests {
         #expect(e.nextFocusSecondsOverride == nil)
         #expect(e.active?.plannedSeconds == 2400)
     }
+
+    @Test func controlRowsForEveryState() {
+        #expect(e.controlRows == ControlRows(main: .startFocus, others: [.adjustLength]))
+        e.start()
+        #expect(e.controlRows == ControlRows(main: .pause, others: [.endEarly, .cancel]))
+        e.pause()
+        #expect(e.controlRows == ControlRows(main: .resume, others: [.endEarly, .cancel]))
+        e.resume(); h.run(2400)
+        #expect(e.controlRows == ControlRows(main: .startBreak, others: [.skipBreak]))
+        e.start()
+        #expect(e.controlRows == ControlRows(main: .pause, others: [.skip]))
+        e.pause()
+        #expect(e.controlRows == ControlRows(main: .resume, others: [.skip]))
+    }
 }

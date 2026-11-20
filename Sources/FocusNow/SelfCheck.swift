@@ -415,6 +415,7 @@ extension AppDelegate {
         for line in snap.spoken(roles: ["AXButton", "AXTextField", "AXIncrementor"], in: window) {
             snap.note("voiceover: \(line)")
         }
+        noteControlRows(snap, in: window, "idle")
         window.appearance = NSAppearance(named: .aqua)
         await shot("timer-idle")
         window.appearance = NSAppearance(named: .darkAqua)
@@ -426,10 +427,12 @@ extension AppDelegate {
         engine.start()
         await snap.wait(0.6)
         snap.note("running fields=\(fields()) inSession=\(engine.isInSession) ring idle=\(idleRing) running=\(ring()) (want 0 true, equal)")
+        noteControlRows(snap, in: window, "running")
         await shot("timer-running")
         engine.pause()
         await snap.wait(0.4)
         snap.note("paused fields=\(fields())")
+        noteControlRows(snap, in: window, "paused")
         await shot("timer-paused")
         engine.cancel()
         await snap.wait(0.6)
@@ -448,6 +451,7 @@ extension AppDelegate {
         await snap.wait(0.5)
         let idleMinRing = ring()
         snap.note("min size fields=\(fields()) content=\(window.contentView?.bounds.size ?? .zero)")
+        noteControlRows(snap, in: window, "min size idle")
         await shot("timer-idle-min")
         engine.start()
         await snap.wait(0.6)
@@ -618,6 +622,30 @@ extension AppDelegate {
         return handled
     }
 
+    /// The main button alone on the top row, the others sharing the row beneath it.
+    func noteControlRows(_ snap: DebugSnapshots, in window: NSWindow, _ label: String) {
+        let rows = engine.controlRows
+        let otherTitles = rows.others.flatMap { control in
+            control == .adjustLength ? ["Five minutes shorter", "Five minutes longer"] : [TimerControlsRow.title(for: control)]
+        }
+        let mainTitle = TimerControlsRow.title(for: rows.main)
+        guard let main = snap.accessibilityFrame(of: mainTitle, in: window) else {
+            snap.note("\(label) rows: no \"\(mainTitle)\" button")
+            return
+        }
+        let others = otherTitles.compactMap { snap.accessibilityFrame(of: $0, in: window) }
+        guard others.count == otherTitles.count, let first = others.first else {
+            snap.note("\(label) rows: missing one of \(otherTitles)")
+            return
+        }
+        // Screen coordinates: y grows upwards, so the row beneath has the smaller y.
+        let below = others.allSatisfy { abs($0.midY - first.midY) < 0.5 && $0.maxY <= main.minY }
+        let sum = others.reduce(0) { $0 + $1.width } + CGFloat(others.count - 1) * 6
+        snap.note("\(label) rows: main=\(mainTitle) w=\(Int(main.width)) h=\(Int(main.height)) gap=\(Int((main.minY - first.maxY).rounded())) others=\(otherTitles) " +
+            "w=\(others.map { Int($0.width) }) h=\(others.map { Int($0.height) }) below=\(below) sum=\(Int(sum.rounded())) " +
+            "(want sum == main w, every h == main h, below true)")
+    }
+
     func closeAllWindows() {
         for window in NSApp.windows where window.isVisible && window.title.isEmpty == false {
             window.performClose(nil)
@@ -676,6 +704,7 @@ extension AppDelegate {
         statusItem.clicked()
         await snap.wait(0.1)
         snap.note("click 1: popoverVisible=\(statusItem.popoverWindowVisible) closesOnOutsideClick=\(statusItem.closesOnOutsideClick) active=\(NSApp.isActive)")
+        if let popoverWindow = statusItem.popoverWindow { noteControlRows(snap, in: popoverWindow, "popover idle") }
         await snap.wait(1.0)
         statusItem.clicked()
         snap.note("click 2: popoverVisible=\(statusItem.popoverWindowVisible)")
@@ -695,6 +724,7 @@ extension AppDelegate {
         engine.resume()
         await snap.wait(3.0)
         state("focus finished")
+        if let popoverWindow = statusItem.popoverWindow { noteControlRows(snap, in: popoverWindow, "popover break pending") }
         snap.note("sound would play: \(settings.settings.soundOn && NSSound(named: FinishAlerter.soundName) != nil)")
         snap.note("finished popover closesOnOutsideClick=\(statusItem.closesOnOutsideClick) " +
             "frontmost=\(NSWorkspace.shared.frontmostApplication?.localizedName ?? "?")")

@@ -48,8 +48,9 @@ struct TimerPageView: View {
 enum TimerPageLayout {
     static let minimumDiameter: CGFloat = 120
     static let spacing: CGFloat = 22
-    /// The phase label, controls, today's bar and the spacing between them.
-    private static let reserved: CGFloat = 170
+    /// The phase label, both rows of controls, today's bar and the spacing
+    /// between them (the second row is 27 pt plus a 6 pt gap).
+    private static let reserved: CGFloat = 203
 
     /// The ring's diameter, leaving room for the event list when it's shown
     /// (`eventsHeight`), never under `minimumDiameter`.

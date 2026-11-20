@@ -206,7 +206,9 @@ struct TimerRing: View {
     static let digitsIdentifier = "next-session-length"
 }
 
-/// The buttons for the engine's current state: −/+ and Start, Pause and End early, and so on.
+/// The buttons for the engine's current state, in two rows: the main action
+/// (Start, Pause or Resume) alone on top, the others sharing the row beneath.
+/// Every state has both rows, so nothing below moves when a session starts.
 struct TimerControlsRow: View {
     let engine: TimerEngine
     var onAction: (TimerControl) -> Void = { _ in }
@@ -218,33 +220,42 @@ struct TimerControlsRow: View {
     private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
 
     var body: some View {
-        HStack(spacing: 6) {
-            ForEach(engine.controls, id: \.self) { control in
-                if control == .adjustLength {
-                    adjustButtons
-                } else {
-                    Button(title(for: control)) { perform(control) }
-                        .buttonStyle(PressableButtonStyle(
-                            prominent: isPrimary(control), tint: colors.color(for: engine.displayedKind),
-                            text: colors.text(on: engine.displayedKind)))
+        let rows = engine.controlRows
+        VStack(spacing: 6) {
+            button(rows.main)
+            HStack(spacing: 6) {
+                ForEach(rows.others, id: \.self) { control in
+                    if control == .adjustLength {
+                        adjustButtons
+                    } else {
+                        button(control)
+                    }
                 }
             }
         }
     }
 
+    private func button(_ control: TimerControl) -> some View {
+        Button(Self.title(for: control)) { perform(control) }
+            .buttonStyle(PressableButtonStyle(
+                prominent: isPrimary(control), tint: colors.color(for: engine.displayedKind),
+                text: colors.text(on: engine.displayedKind)))
+    }
+
     private var adjustButtons: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
+            // The glyphs get a text line's height, or the − button (a 2 pt
+            // glyph) would be shorter than the + button and the main button.
             Button { adjust(by: -TimerEngine.adjustStepMinutes) } label: {
-                Image(systemName: "minus")
+                Image(systemName: "minus").frame(height: 15)
             }
             .accessibilityLabel("Five minutes shorter")
             Button { adjust(by: TimerEngine.adjustStepMinutes) } label: {
-                Image(systemName: "plus")
+                Image(systemName: "plus").frame(height: 15)
             }
             .accessibilityLabel("Five minutes longer")
         }
-        .buttonStyle(PressableButtonStyle(compact: true))
-        .fixedSize()
+        .buttonStyle(PressableButtonStyle())
     }
 
     /// Counts as answering a finish, as Start does.
@@ -268,7 +279,7 @@ struct TimerControlsRow: View {
         onAction(control)
     }
 
-    private func title(for control: TimerControl) -> String {
+    static func title(for control: TimerControl) -> String {
         switch control {
         case .startFocus: "Start focus"
         case .startBreak: "Start break"

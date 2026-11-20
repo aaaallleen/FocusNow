@@ -6,6 +6,17 @@ public enum TimerControl: Equatable, Sendable {
     case pause, resume, endEarly, cancel, skip
 }
 
+/// The buttons in two rows: the main action alone on top, the rest beneath.
+public struct ControlRows: Equatable, Sendable {
+    public var main: TimerControl
+    public var others: [TimerControl]
+
+    public init(main: TimerControl, others: [TimerControl]) {
+        self.main = main
+        self.others = others
+    }
+}
+
 extension TimerEngine {
     public static let adjustStepMinutes = 5
     public static let adjustRangeMinutes = TimerSettings.minuteRange
@@ -36,6 +47,16 @@ extension TimerEngine {
         case (.running, true): return [.pause, .skip]
         case (.paused, true): return [.resume, .skip]
         }
+    }
+
+    /// `controls` split into rows: start, pause or resume on top, the rest beneath.
+    public var controlRows: ControlRows {
+        let all = controls
+        let mainControls: [TimerControl] = [.startFocus, .startBreak, .pause, .resume]
+        guard let main = all.first(where: mainControls.contains) else {
+            return ControlRows(main: all[0], others: Array(all.dropFirst()))
+        }
+        return ControlRows(main: main, others: all.filter { $0 != main })
     }
 
     /// Changes only the next focus session's length, in steps within 1–180 minutes.
