@@ -37,7 +37,9 @@ struct MainWindowView: View {
                     })
             case .stats: StatsView(model: statsModel, preferences: calendarPrefs)
             case .settings:
-                SettingsView(settings: settings, state: state, calendarModel: calendarModel, calendarPrefs: calendarPrefs)
+                SettingsView(
+                    settings: settings, state: state, calendarModel: calendarModel, calendarPrefs: calendarPrefs,
+                    appearance: appearance)
             }
         }
         .frame(minWidth: 640, minHeight: 480)

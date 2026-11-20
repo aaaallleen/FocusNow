@@ -90,7 +90,51 @@ extension AppDelegate {
         engine.cancel()
         engine.skipBreak()
         appearancePrefs.choosePreset("teal")
-        appearancePrefs.mode = .system
         await snap.wait(0.4)
+
+        await checkAppearancePane(snap, window: window, frameView: frameView)
+        appearancePrefs.choosePreset("teal")
+        appearancePrefs.mode = .system
+        mainState.settingsSection = .cycle
+        window.setContentSize(NSSize(width: 760, height: 560))
+        await snap.wait(0.4)
+    }
+
+    /// Settings → Appearance: the mode, the nine tiles, and Custom's four colours.
+    private func checkAppearancePane(_ snap: DebugSnapshots, window: NSWindow, frameView: NSView) async {
+        mainState.settingsSection = .appearance
+        showSettings()
+        window.setContentSize(NSSize(width: 760, height: 900))
+        await snap.wait(0.8)
+        func shot(_ name: String) async {
+            await snap.wait(0.2)
+            snap.capture(frameView, as: name, scale: 1)
+        }
+        let names = Colorway.presets.map(\.name) + ["Custom"]
+        let tiles = names.filter { snap.accessibilityFrame(of: $0, in: window) != nil }.count
+        let modes = ["System", "Light", "Dark"].filter { snap.accessibilityFrame(of: $0, in: window) != nil }.count
+        snap.note("appearance pane: section=\(mainState.settingsSection) tiles=\(tiles) modes=\(modes) " +
+            "selected=\(snap.selectedLabels(in: window).filter(names.contains)) (want appearance 9 3 [\"Teal & Amber\"])")
+        window.appearance = NSAppearance(named: .aqua)
+        await shot("appearance-teal")
+        window.appearance = nil
+
+        _ = await snap.press(accessibilityLabel: "Sage & Clay", in: window)
+        snap.note("pressed Sage & Clay: colorway=\(appearancePrefs.colorwayID) (want sage)")
+        _ = await snap.press(accessibilityLabel: "Custom", in: window)
+        await snap.wait(0.4)
+        let titles = ["Focus, light mode", "Focus, dark mode", "Break, light mode", "Break, dark mode"]
+        let wells = titles.filter { snap.containsText($0, in: window) }.count
+        let note = "Custom starts from the colorway you had picked. Button text switches between black and white to stay readable."
+        snap.note("pressed Custom: colorway=\(appearancePrefs.colorwayID) " +
+            "custom==sage=\(appearancePrefs.custom == Colorway.preset(id: "sage")?.palette) wells=\(wells) " +
+            "note=\(snap.containsText(note, in: window)) (want custom true 4 true)")
+        appearancePrefs.setCustom(SRGBColor(hex: "#FF0000")!, for: .focusLight)
+        await snap.wait(0.4)
+        window.appearance = NSAppearance(named: .aqua)
+        await shot("appearance-custom")
+        window.appearance = NSAppearance(named: .darkAqua)
+        await shot("appearance-custom-dark")
+        window.appearance = nil
     }
 }

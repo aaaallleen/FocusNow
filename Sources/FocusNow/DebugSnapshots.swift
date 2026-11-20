@@ -146,6 +146,14 @@ final class DebugSnapshots {
         }
     }
 
+    /// The labels of the elements VoiceOver reads as selected.
+    func selectedLabels(in window: NSWindow) -> [String] {
+        accessibilityElements(in: window).compactMap { element in
+            guard Self.attribute(element, "isAccessibilitySelected") as? Bool == true else { return nil }
+            return Self.attribute(element, "accessibilityLabel") as? String
+        }
+    }
+
     /// The screen frame of the element with this accessibility label, title or identifier.
     func accessibilityFrame(of label: String, in window: NSWindow) -> NSRect? {
         let element = accessibilityElements(in: window).first {

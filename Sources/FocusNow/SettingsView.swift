@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The sections of the Settings page, in sidebar order.
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case cycle, goal, general, calendar
+    case cycle, goal, general, calendar, appearance
 
     var id: Self { self }
 
@@ -14,6 +14,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .goal: "Goal"
         case .general: "General"
         case .calendar: "Calendar"
+        case .appearance: "Appearance"
         }
     }
 
@@ -23,6 +24,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .goal: "target"
         case .general: "gearshape"
         case .calendar: "calendar"
+        case .appearance: "paintpalette"
         }
     }
 }
@@ -34,6 +36,7 @@ struct SettingsView: View {
     @Bindable var state: MainWindowState
     let calendarModel: CalendarModel
     let calendarPrefs: CalendarPreferences
+    let appearance: AppearancePreferences
 
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
@@ -70,6 +73,7 @@ struct SettingsView: View {
         case .goal: GoalPane(settings: settings)
         case .general: GeneralPane(settings: settings)
         case .calendar: CalendarPane(model: calendarModel, preferences: calendarPrefs)
+        case .appearance: AppearancePane(preferences: appearance)
         }
     }
 }
