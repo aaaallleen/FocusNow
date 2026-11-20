@@ -467,6 +467,7 @@ extension AppDelegate {
         snap.note("large content=\(window.contentView?.bounds.size ?? .zero) remaining=\(TimeFormat.clock(engine.remainingSeconds))")
         await shot("timer-running-large")
         engine.cancel()
+        engine.focusDefaultChanged() // the 3-hour length was only for this shot
 
         await checkRingGaps(snap, in: window)
         window.setContentSize(NSSize(width: 760, height: 560))
@@ -643,11 +644,30 @@ extension AppDelegate {
         let screen = (window.screen ?? NSScreen.main)?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
         let sizes = [NSSize(width: 640, height: 480), NSSize(width: 760, height: 560), NSSize(width: 1400, height: 900),
                      NSSize(width: screen.width, height: screen.height - titleBar)]
+        // The page zooms with the window from its default 760×560: buttons, the
+        // Today bar and the event list keep their proportions to the ring.
+        var base: (button: NSSize, row: CGFloat, label: CGFloat)?
         for size in sizes {
             for events in [true, false] {
                 calendarPrefs.showOnTimerPage = events
                 window.setContentSize(size)
                 await snap.wait(0.5)
+                let bounds = window.contentView?.bounds.size ?? .zero
+                let zoom = max(1, min(bounds.width / 760, bounds.height / 560))
+                let button = snap.accessibilityFrame(of: TimerControlsRow.title(for: engine.controlRows.main), in: window)?.size ?? .zero
+                let row = snap.readable(in: window).first { $0.identifier == UpcomingEventsView.rowIdentifier }?.frame.height ?? 0
+                let labelHeight = snap.readable(in: window).first { $0.text == engine.phaseLabel }?.frame.height ?? 0
+                if events, zoom == 1, base == nil { base = (button, row, labelHeight) }
+                if let base {
+                    func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) <= max(1.5, b * 0.06) }
+                    let ok = near(button.width, base.button.width * zoom) && near(button.height, base.button.height * zoom)
+                        && (!events || near(row, base.row * zoom)) && near(labelHeight, base.label * zoom)
+                    snap.note(String(format: "zoom %dx%d events=%@: s=%.2f button=%.0fx%.0f (want %.0fx%.0f) row=%.0f (want %.0f) " +
+                                     "label=%.0f (want %.0f) ok=%@ (want true)",
+                                     Int(bounds.width), Int(bounds.height), events ? "on" : "off", zoom, button.width, button.height,
+                                     base.button.width * zoom, base.button.height * zoom, events ? row : 0, events ? base.row * zoom : 0,
+                                     labelHeight, base.label * zoom, ok ? "true" : "false"))
+                }
                 let content = window.contentView.map { window.convertToScreen($0.convert($0.bounds, to: nil)) } ?? .zero
                 let label = snap.readable(in: window).first { $0.text == engine.phaseLabel }?.frame
                 let ring = visibleRing(snap, in: window)

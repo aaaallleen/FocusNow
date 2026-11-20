@@ -232,7 +232,7 @@ extension AppDelegate {
         let size = window.contentView?.bounds.size ?? .zero
         let limit = TimerPageLayout.rows(for: size)
         let diameter = TimerPageLayout.diameter(
-            for: size, eventsHeight: UpcomingEventsView.height(model: calendarModel, rowLimit: limit))
+            for: size, eventsHeight: UpcomingEventsView.height(model: calendarModel, rowLimit: limit, scale: TimerPageLayout.scale(for: size)))
         let today = snap.readable(in: window).first { $0.text.hasPrefix("Today ") }?.frame ?? .zero
         let lowest = rows().map(\.frame).min { $0.minY < $1.minY } ?? .zero
         let moreLine = snap.readable(in: window).first { $0.text.hasSuffix(" more") }?.frame

@@ -218,14 +218,15 @@ struct TimerControlsRow: View {
     @Environment(\.pendingEdits) private var pendingEdits
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.timerScale) private var scale
 
     private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
 
     var body: some View {
         let rows = engine.controlRows
-        VStack(spacing: 6) {
+        VStack(spacing: 6 * scale) {
             button(rows.main)
-            HStack(spacing: 6) {
+            HStack(spacing: 6 * scale) {
                 ForEach(rows.others, id: \.self) { control in
                     if control == .adjustLength {
                         adjustButtons
@@ -241,23 +242,23 @@ struct TimerControlsRow: View {
         Button(Self.title(for: control)) { perform(control) }
             .buttonStyle(PressableButtonStyle(
                 prominent: isPrimary(control), tint: colors.color(for: engine.displayedKind),
-                text: colors.text(on: engine.displayedKind)))
+                text: colors.text(on: engine.displayedKind), scale: scale))
     }
 
     private var adjustButtons: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 6 * scale) {
             // The glyphs get a text line's height, or the − button (a 2 pt
             // glyph) would be shorter than the + button and the main button.
             Button { adjust(by: -TimerEngine.adjustStepMinutes) } label: {
-                Image(systemName: "minus").frame(height: 15)
+                Image(systemName: "minus").frame(height: 15 * scale)
             }
             .accessibilityLabel("Five minutes shorter")
             Button { adjust(by: TimerEngine.adjustStepMinutes) } label: {
-                Image(systemName: "plus").frame(height: 15)
+                Image(systemName: "plus").frame(height: 15 * scale)
             }
             .accessibilityLabel("Five minutes longer")
         }
-        .buttonStyle(PressableButtonStyle())
+        .buttonStyle(PressableButtonStyle(scale: scale))
     }
 
     /// Counts as answering a finish, as Start does.
@@ -305,20 +306,22 @@ struct TodayBar: View {
     let engine: TimerEngine
     let settings: SettingsStore
 
+    @Environment(\.timerScale) private var scale
+
     var body: some View {
         let done = engine.todayFocusSeconds()
         let goal = settings.settings.dailyGoalSeconds
-        VStack(spacing: 5) {
+        VStack(spacing: 5 * scale) {
             HStack {
                 Text("Today \(TimeFormat.duration(done))")
                 Spacer()
                 Text("Goal \(TimeFormat.duration(goal))")
             }
-            .font(.system(size: 11))
+            .font(.system(size: 11 * scale))
             .monospacedDigit()
             .foregroundStyle(.secondary)
             GoalBar(fraction: goal > 0 ? min(1, Double(done) / Double(goal)) : 0)
-                .frame(height: 6)
+                .frame(height: 6 * scale)
         }
     }
 }
@@ -346,18 +349,20 @@ struct PressableButtonStyle: ButtonStyle {
     /// The label colour on a prominent fill.
     var text: Color = .white
     var compact = false
+    /// The Timer page's zoom; 1 everywhere else.
+    var scale: CGFloat = 1
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 12 * scale, weight: .medium))
             .lineLimit(1)
             .fixedSize() // labels never truncate; spare width is shared out instead
-            .padding(.vertical, 6)
-            .padding(.horizontal, compact ? 8 : 6)
+            .padding(.vertical, 6 * scale)
+            .padding(.horizontal, (compact ? 8 : 6) * scale)
             .frame(maxWidth: compact ? nil : .infinity)
             .foregroundStyle(prominent ? AnyShapeStyle(text) : AnyShapeStyle(.primary))
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 7 * scale, style: .continuous)
                     .fill(prominent ? AnyShapeStyle(tint) : AnyShapeStyle(Color.primary.opacity(0.08))))
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? Theme.pressScale : 1)
