@@ -5,6 +5,7 @@ import SwiftUI
 struct PopoverView: View {
     let engine: TimerEngine
     let settings: SettingsStore
+    let appearance: AppearancePreferences
     var onAction: (TimerControl) -> Void = { _ in }
     var onStats: () -> Void = {}
     var onSettings: () -> Void = {}
@@ -27,6 +28,7 @@ struct PopoverView: View {
         .frame(width: 230)
         .animation(.easeInOut(duration: Theme.phaseFade), value: engine.phaseKey)
         .environment(\.pendingEdits, pendingEdits)
+        .environment(\.palette, appearance.palette)
     }
 
     private var footer: some View {

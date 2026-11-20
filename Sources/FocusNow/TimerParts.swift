@@ -98,6 +98,8 @@ struct TimerRing: View {
     var onBeginEditing: () -> Void = {}
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
     @State private var editing = false
     @State private var draft = ""
     @State private var initialDraft = ""
@@ -106,7 +108,7 @@ struct TimerRing: View {
     @Environment(\.pendingEdits) private var pendingEdits
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
-    private var tint: Color { Theme.color(for: engine.displayedKind) }
+    private var tint: Color { ThemeColors(palette, scheme: scheme).color(for: engine.displayedKind) }
     private var digitFont: Font { .system(size: diameter * 34 / 150, weight: .light) }
     private var canEdit: Bool { editable && engine.controls.contains(.adjustLength) }
 
@@ -210,8 +212,10 @@ struct TimerControlsRow: View {
     var onAction: (TimerControl) -> Void = { _ in }
 
     @Environment(\.pendingEdits) private var pendingEdits
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
 
-    private var tint: Color { Theme.color(for: engine.displayedKind) }
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -220,7 +224,9 @@ struct TimerControlsRow: View {
                     adjustButtons
                 } else {
                     Button(title(for: control)) { perform(control) }
-                        .buttonStyle(PressableButtonStyle(prominent: isPrimary(control), tint: tint))
+                        .buttonStyle(PressableButtonStyle(
+                            prominent: isPrimary(control), tint: colors.color(for: engine.displayedKind),
+                            text: colors.text(on: engine.displayedKind)))
                 }
             }
         }
@@ -307,11 +313,14 @@ struct TodayBar: View {
 struct GoalBar: View {
     let fraction: Double
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.track)
-                Capsule().fill(Theme.focus).frame(width: geo.size.width * fraction)
+                Capsule().fill(ThemeColors(palette, scheme: scheme).focus).frame(width: geo.size.width * fraction)
             }
         }
     }
@@ -320,7 +329,9 @@ struct GoalBar: View {
 /// Every pressable control: scales to 0.97 on press over 0.15 s, ease-out.
 struct PressableButtonStyle: ButtonStyle {
     var prominent = false
-    var tint: Color = Theme.focus
+    var tint: Color = Color(Colorway.standard.palette.focusLight)
+    /// The label colour on a prominent fill.
+    var text: Color = .white
     var compact = false
 
     func makeBody(configuration: Configuration) -> some View {
@@ -331,7 +342,7 @@ struct PressableButtonStyle: ButtonStyle {
             .padding(.vertical, 6)
             .padding(.horizontal, compact ? 8 : 6)
             .frame(maxWidth: compact ? nil : .infinity)
-            .foregroundStyle(prominent ? AnyShapeStyle(Color.white) : AnyShapeStyle(.primary))
+            .foregroundStyle(prominent ? AnyShapeStyle(text) : AnyShapeStyle(.primary))
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
                     .fill(prominent ? AnyShapeStyle(tint) : AnyShapeStyle(Color.primary.opacity(0.08))))

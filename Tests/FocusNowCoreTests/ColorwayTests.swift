@@ -28,28 +28,28 @@ struct ColorwayTests {
     }
 
     @Test func hexParsing() {
-        #expect(RGBColor(hex: "336b82")?.hex == "#336B82")
-        #expect(RGBColor(hex: "#336B82")?.hex == "#336B82")
-        #expect(RGBColor(hex: "#12345") == nil)
-        #expect(RGBColor(hex: "zzzzzz") == nil)
-        #expect(RGBColor(hex: "") == nil)
+        #expect(SRGBColor(hex: "336b82")?.hex == "#336B82")
+        #expect(SRGBColor(hex: "#336B82")?.hex == "#336B82")
+        #expect(SRGBColor(hex: "#12345") == nil)
+        #expect(SRGBColor(hex: "zzzzzz") == nil)
+        #expect(SRGBColor(hex: "") == nil)
     }
 
     @Test func clampsOutOfRangeComponents() {
-        #expect(RGBColor(red: 1.2, green: -0.1, blue: 0.5).hex == "#FF0080")
+        #expect(SRGBColor(red: 1.2, green: -0.1, blue: 0.5).hex == "#FF0080")
     }
 
     @Test func textPicksTheMoreReadable() {
-        #expect(TextOnColor.best(on: RGBColor(hex: "#336B82")!) == .white)
-        #expect(TextOnColor.best(on: RGBColor(hex: "#E9BA66")!) == .dark)
-        #expect(TextOnColor.best(on: RGBColor(hex: "#6BB0C9")!) == .dark)
-        #expect(TextOnColor.best(on: RGBColor(hex: "#000000")!) == .white)
-        #expect(TextOnColor.best(on: RGBColor(hex: "#FFFFFF")!) == .dark)
+        #expect(TextOnColor.best(on: SRGBColor(hex: "#336B82")!) == .white)
+        #expect(TextOnColor.best(on: SRGBColor(hex: "#E9BA66")!) == .dark)
+        #expect(TextOnColor.best(on: SRGBColor(hex: "#6BB0C9")!) == .dark)
+        #expect(TextOnColor.best(on: SRGBColor(hex: "#000000")!) == .white)
+        #expect(TextOnColor.best(on: SRGBColor(hex: "#FFFFFF")!) == .dark)
     }
 
     @Test func paletteSlotsAndHexes() {
         var p = Colorway.standard.palette
-        p[.breakDark] = RGBColor(hex: "#112233")!
+        p[.breakDark] = SRGBColor(hex: "#112233")!
         #expect(p.rest(dark: true).hex == "#112233")
         #expect(p.focus(dark: false).hex == "#336B82")
         #expect(Palette(hexes: p.hexes) == p)

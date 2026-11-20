@@ -21,6 +21,7 @@ struct MainWindowView: View {
     let statsModel: StatsViewModel
     let calendarModel: CalendarModel
     let calendarPrefs: CalendarPreferences
+    let appearance: AppearancePreferences
     var onAction: (TimerControl) -> Void = { _ in }
 
     var body: some View {
@@ -41,6 +42,7 @@ struct MainWindowView: View {
         }
         .frame(minWidth: 640, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.palette, appearance.palette)
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Page", selection: $state.page) {

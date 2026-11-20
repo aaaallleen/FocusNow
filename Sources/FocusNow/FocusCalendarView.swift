@@ -34,6 +34,10 @@ private struct Timeline: View {
     let span: HourSpan
     let uses24Hour: Bool
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
+
     private var calendar: Calendar { .autoupdatingCurrent }
 
     var body: some View {
@@ -49,7 +53,7 @@ private struct Timeline: View {
                             yStart: .value("Start", -block.startHour),
                             yEnd: .value("End", -block.endHour),
                             width: .ratio(0.86))
-                        .foregroundStyle(Theme.focus)
+                        .foregroundStyle(colors.focus)
                         .cornerRadius(3)
                         .annotation(position: .overlay, alignment: .topLeading) {
                             if CGFloat(block.endHour - block.startHour) * perHour >= 15 {
@@ -60,7 +64,7 @@ private struct Timeline: View {
                                 }
                                 .font(.system(size: 10, weight: .medium))
                                 .monospacedDigit()
-                                .foregroundStyle(Theme.onFocus)
+                                .foregroundStyle(colors.onFocus)
                                 .lineLimit(1)
                                 .padding(.leading, 4)
                                 .padding(.top, 2)
@@ -170,6 +174,9 @@ private struct DayCell: View {
     let day: FocusDay?
     let uses24Hour: Bool
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
     private static let headerHeight: CGFloat = 16
     private static let lineHeight: CGFloat = 13
 
@@ -187,7 +194,7 @@ private struct DayCell: View {
                 HStack(spacing: 4) {
                     Text(date.formatted(.dateTime.day()))
                         .foregroundStyle(Calendar.autoupdatingCurrent.isDateInToday(date)
-                                         ? AnyShapeStyle(Theme.focus) : AnyShapeStyle(.secondary))
+                                         ? AnyShapeStyle(ThemeColors(palette, scheme: scheme).focus) : AnyShapeStyle(.secondary))
                     Spacer(minLength: 0)
                     if let seconds = day?.focusSeconds, seconds > 0 {
                         Text(TimeFormat.duration(seconds)).fontWeight(.semibold).monospacedDigit()

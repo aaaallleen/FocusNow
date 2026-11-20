@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var calendarPrefs: CalendarPreferences!
     private(set) var calendarSource: CalendarSource!
     private(set) var calendarModel: CalendarModel!
+    private(set) var appearancePrefs: AppearancePreferences!
     let mainState = MainWindowState()
     private var driver: TimerDriver!
     private var calendarTimer: Timer?
@@ -52,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.calendarModel = calendarModel
         refreshCalendarAsEventsPass()
 
+        let appearancePrefs = AppearancePreferences(defaults: Self.defaults())
+        self.appearancePrefs = appearancePrefs
+
         // A one-off length belongs to the Focus default it was set against.
         settings.onFocusMinutesChange = { [weak engine] in engine?.focusDefaultChanged() }
 
@@ -59,8 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         driver.start()
 
         alerter = FinishAlerter(settings: settings)
-        statusItem = StatusItemController(engine: engine)
+        statusItem = StatusItemController(engine: engine, palette: { appearancePrefs.palette })
         statusItem.setPopoverContent(makePopoverController())
+        followAppearance()
 
         engine.onFinish = { [weak self] kind in
             guard let self else { return }
@@ -81,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             makeMain: { [weak self] in
                 AnyView(MainWindowView(
                     state: mainState, engine: engine, settings: settings, statsModel: statsModel,
-                    calendarModel: calendarModel, calendarPrefs: calendarPrefs,
+                    calendarModel: calendarModel, calendarPrefs: calendarPrefs, appearance: appearancePrefs,
                     onAction: { control in self?.windowTimerWasUsed(control) }))
             },
             savesWindowPlace: Self.testDataDir == nil)
@@ -171,6 +176,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// A changed goal changes the stats (the goal line and today's tile).
+    /// Applies the light/dark mode to the app and the popover (the menu bar item
+    /// keeps following the menu bar), and redraws the menu bar item, whose break
+    /// colour comes from the colourway. Runs again on every change.
+    private func followAppearance() {
+        let appearance: NSAppearance? = withObservationTracking {
+            _ = appearancePrefs.palette
+            return switch appearancePrefs.mode {
+            case .system: nil
+            case .light: NSAppearance(named: .aqua)
+            case .dark: NSAppearance(named: .darkAqua)
+            }
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.followAppearance() }
+        }
+        NSApp.appearance = appearance
+        statusItem.setPopoverAppearance(appearance)
+        statusItem.redraw()
+    }
+
     private func reloadStatsWhenSettingsChange() {
         withObservationTracking {
             _ = settings.settings
@@ -199,7 +223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func makePopoverController() -> NSViewController {
         let controller = NSHostingController(rootView: PopoverView(
-            engine: engine, settings: settings,
+            engine: engine, settings: settings, appearance: appearancePrefs,
             onAction: { [weak self] control in
                 guard let self else { return }
                 statusItem.popoverWasUsed()

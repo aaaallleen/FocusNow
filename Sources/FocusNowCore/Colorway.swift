@@ -1,7 +1,7 @@
 import Foundation
 
 /// An opaque sRGB colour, each component 0...1.
-public struct RGBColor: Equatable, Codable, Sendable {
+public struct SRGBColor: Equatable, Codable, Sendable {
     public var red: Double
     public var green: Double
     public var blue: Double
@@ -36,7 +36,7 @@ public struct RGBColor: Equatable, Codable, Sendable {
     }
 
     /// WCAG contrast ratio against `other`, 1...21.
-    public func contrast(with other: RGBColor) -> Double {
+    public func contrast(with other: SRGBColor) -> Double {
         let (a, b) = (luminance, other.luminance)
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
@@ -46,11 +46,11 @@ public struct RGBColor: Equatable, Codable, Sendable {
 public enum TextOnColor: Equatable, Sendable {
     case white, dark
 
-    public static let darkColor = RGBColor(red: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255)
+    public static let darkColor = SRGBColor(red: 0x14 / 255, green: 0x14 / 255, blue: 0x14 / 255)
 
     /// Whichever has more contrast against `color`.
-    public static func best(on color: RGBColor) -> TextOnColor {
-        let white = RGBColor(red: 1, green: 1, blue: 1)
+    public static func best(on color: SRGBColor) -> TextOnColor {
+        let white = SRGBColor(red: 1, green: 1, blue: 1)
         return color.contrast(with: white) >= color.contrast(with: darkColor) ? .white : .dark
     }
 }
@@ -62,12 +62,12 @@ public enum PaletteSlot: Int, CaseIterable, Sendable {
 
 /// A focus colour and a break colour, each with a light- and a dark-mode shade.
 public struct Palette: Equatable, Sendable {
-    public var focusLight: RGBColor
-    public var focusDark: RGBColor
-    public var breakLight: RGBColor
-    public var breakDark: RGBColor
+    public var focusLight: SRGBColor
+    public var focusDark: SRGBColor
+    public var breakLight: SRGBColor
+    public var breakDark: SRGBColor
 
-    public init(focusLight: RGBColor, focusDark: RGBColor, breakLight: RGBColor, breakDark: RGBColor) {
+    public init(focusLight: SRGBColor, focusDark: SRGBColor, breakLight: SRGBColor, breakDark: SRGBColor) {
         self.focusLight = focusLight
         self.focusDark = focusDark
         self.breakLight = breakLight
@@ -76,12 +76,12 @@ public struct Palette: Equatable, Sendable {
 
     /// Exactly four valid hex colours, in `PaletteSlot` order.
     public init?(hexes: [String]) {
-        let colors = hexes.compactMap(RGBColor.init(hex:))
+        let colors = hexes.compactMap(SRGBColor.init(hex:))
         guard hexes.count == 4, colors.count == 4 else { return nil }
         self.init(focusLight: colors[0], focusDark: colors[1], breakLight: colors[2], breakDark: colors[3])
     }
 
-    public subscript(slot: PaletteSlot) -> RGBColor {
+    public subscript(slot: PaletteSlot) -> SRGBColor {
         get {
             switch slot {
             case .focusLight: focusLight
@@ -100,8 +100,8 @@ public struct Palette: Equatable, Sendable {
         }
     }
 
-    public func focus(dark: Bool) -> RGBColor { dark ? focusDark : focusLight }
-    public func rest(dark: Bool) -> RGBColor { dark ? breakDark : breakLight }
+    public func focus(dark: Bool) -> SRGBColor { dark ? focusDark : focusLight }
+    public func rest(dark: Bool) -> SRGBColor { dark ? breakDark : breakLight }
 
     /// The four colours as hex, in `PaletteSlot` order.
     public var hexes: [String] { PaletteSlot.allCases.map { self[$0].hex } }

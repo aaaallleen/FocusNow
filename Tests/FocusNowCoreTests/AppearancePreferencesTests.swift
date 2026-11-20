@@ -63,7 +63,7 @@ struct AppearancePreferencesTests {
     @Test func customIsKeptAfterSwitchingAway() {
         let d = freshDefaults()
         let p = AppearancePreferences(defaults: d)
-        p.setCustom(RGBColor(hex: "#112233")!, for: .focusLight)
+        p.setCustom(SRGBColor(hex: "#112233")!, for: .focusLight)
         #expect(p.colorwayID == AppearancePreferences.customID)
         p.choosePreset("ocean")
         p.chooseCustom()

@@ -6,6 +6,10 @@ import SwiftUI
 /// the selected period, and the sessions in the selected bar (or today).
 struct StatsView: View {
     let model: StatsViewModel
+
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
     @Bindable var preferences: CalendarPreferences
 
     static let displaySwitchIdentifier = "stats-display"
@@ -34,7 +38,7 @@ struct StatsView: View {
         HStack(spacing: 10) {
             ForEach(StatsRange.allCases, id: \.self) { range in
                 Button { model.range = range } label: { tile(for: range) }
-                    .buttonStyle(TileButtonStyle(selected: model.range == range))
+                    .buttonStyle(TileButtonStyle(selected: model.range == range, accent: colors.focus))
             }
         }
     }
@@ -128,7 +132,7 @@ struct StatsView: View {
                 BarMark(
                     x: .value("Period", bucket.interval.start, unit: unit),
                     y: .value("Hours", Double(bucket.focusSeconds) / 3600))
-                .foregroundStyle(Theme.focus.opacity(barOpacity(bucket, now: now)))
+                .foregroundStyle(colors.focus.opacity(barOpacity(bucket, now: now)))
                 .cornerRadius(3)
             }
             if let goal {
@@ -249,6 +253,7 @@ private struct SessionRow: View {
 /// A stats tile: a card that shows a focus-coloured border when selected.
 private struct TileButtonStyle: ButtonStyle {
     let selected: Bool
+    let accent: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -257,7 +262,7 @@ private struct TileButtonStyle: ButtonStyle {
             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.primary.opacity(0.06)))
             .overlay(
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(selected ? Theme.focus : .clear, lineWidth: 1.5))
+                    .strokeBorder(selected ? accent : .clear, lineWidth: 1.5))
             .contentShape(Rectangle())
             .scaleEffect(configuration.isPressed ? Theme.pressScale : 1)
             .animation(.easeOut(duration: Theme.pressDuration), value: configuration.isPressed)

@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "timer", "digits", "commits", "outside", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -16,6 +16,7 @@ extension AppDelegate {
         if phases.contains("stats") { await checkStats(snap) }
         if phases.contains("settings") { await checkSettings(snap) }
         if phases.contains("calendar") { await checkCalendar(snap) }
+        if phases.contains("appearance") { await checkAppearance(snap) }
         if phases.contains("timer") { await checkTimer(snap) }
         if phases.contains("digits") { await checkDigits(snap) }
         if phases.contains("commits") { await checkCommits(snap) }
@@ -23,7 +24,8 @@ extension AppDelegate {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
                 "idleRemaining=\(engine.remainingSeconds) goalHistory=\(settings.goalHistory.count) " +
-                "loginItemStatus=\(SMAppService.mainApp.status.rawValue) statsDisplay=\(calendarPrefs.statsDisplay)")
+                "loginItemStatus=\(SMAppService.mainApp.status.rawValue) statsDisplay=\(calendarPrefs.statsDisplay) " +
+                "mode=\(appearancePrefs.mode) colorway=\(appearancePrefs.colorwayID)")
         }
         if phases.contains("outside") { await checkOutside(snap) }
         // Last: it quits with a session running, for the persist phase's relaunch.
@@ -519,7 +521,7 @@ extension AppDelegate {
         if await edit("180", in: window) { await snap.pressKey(ret.0, characters: ret.1, in: window) }
         snap.note("digits 180 → \(TimeFormat.clock(remaining()))")
         if let frameView = window.contentView?.superview { snap.capture(frameView, as: "timer-idle-180", scale: 1) }
-        snap.render(PopoverView(engine: engine, settings: settings), as: "popover-180")
+        snap.render(PopoverView(engine: engine, settings: settings, appearance: appearancePrefs), as: "popover-180")
         engine.setNextFocus(minutes: 40)
 
         // In the popover.
@@ -651,7 +653,7 @@ extension AppDelegate {
 
     func checkPopover(_ snap: DebugSnapshots) async {
         snap.note("== popover ==")
-        let popover = { PopoverView(engine: self.engine, settings: self.settings) }
+        let popover = { PopoverView(engine: self.engine, settings: self.settings, appearance: self.appearancePrefs) }
         func menubar(_ label: String) { snap.note("\(label): " + DebugSnapshots.describe(statusItem.button)) }
         func state(_ label: String) {
             snap.note("\(label): status=\(engine.status) phase=\"\(engine.phaseLabel)\" controls=\(engine.controls) " +

@@ -59,6 +59,9 @@ struct UpcomingEventsView: View {
 private struct EventRow: View {
     let row: UpcomingRow
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+
     private var title: String { row.event.title.isEmpty ? "No title" : row.event.title }
     private var lead: String { row.isNow ? "Now" : Self.time(row.event.start) }
     private var trail: String { (row.isNow ? "until " : "to ") + Self.time(row.event.end) }
@@ -71,7 +74,7 @@ private struct EventRow: View {
             Circle().fill(Color(row.event.color)).frame(width: 7, height: 7)
             Text(lead)
                 .fontWeight(row.isNow ? .semibold : .regular)
-                .foregroundStyle(row.isNow ? AnyShapeStyle(Theme.focus) : AnyShapeStyle(.secondary))
+                .foregroundStyle(row.isNow ? AnyShapeStyle(ThemeColors(palette, scheme: scheme).focus) : AnyShapeStyle(.secondary))
                 .monospacedDigit()
                 .frame(width: 62, alignment: .leading)
             Text(title)

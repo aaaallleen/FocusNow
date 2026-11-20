@@ -69,7 +69,7 @@ public final class AppearancePreferences {
     }
 
     /// Changes one custom colour, choosing Custom first if it isn't chosen.
-    public func setCustom(_ color: RGBColor, for slot: PaletteSlot) {
+    public func setCustom(_ color: SRGBColor, for slot: PaletteSlot) {
         chooseCustom()
         custom?[slot] = color
     }

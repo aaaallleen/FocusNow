@@ -7,6 +7,8 @@ import Observation
 @MainActor
 final class StatusItemController: NSObject {
     private let engine: TimerEngine
+    /// The chosen colourway's colours, read each time the button is drawn.
+    private let palette: () -> Palette
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private var flashTimer: Timer?
@@ -34,8 +36,9 @@ final class StatusItemController: NSObject {
         popoverWindow?.makeKey()
     }
 
-    init(engine: TimerEngine) {
+    init(engine: TimerEngine, palette: @escaping () -> Palette) {
         self.engine = engine
+        self.palette = palette
         super.init()
         popover.animates = true
         // Closing is handled here rather than by `.transient`, which only closes
@@ -51,6 +54,12 @@ final class StatusItemController: NSObject {
 
     func setPopoverContent(_ controller: NSViewController) {
         popover.contentViewController = controller
+    }
+
+    /// Light, dark, or nil to follow the Mac. Without it the popover takes its
+    /// look from the menu bar item, which always follows the menu bar.
+    func setPopoverAppearance(_ appearance: NSAppearance?) {
+        popover.appearance = appearance
     }
 
     /// Opened by a click: the app activates and the popover closes on a click outside.
@@ -189,7 +198,7 @@ final class StatusItemController: NSObject {
         }
     }
 
-    private func redraw() {
+    func redraw() {
         guard let button = item.button else { return }
         let status = engine.status
         let kind = engine.active?.kind ?? engine.nextKind
@@ -217,11 +226,13 @@ final class StatusItemController: NSObject {
                 .baselineOffset: 0.5,
             ]
             let isBreak = kind.isBreak && status == .running
-            if isBreak { attributes[.foregroundColor] = Theme.restNS }
+            let p = palette()
+            let breakColor = NSColor.dynamic(light: p.breakLight, dark: p.breakDark)
+            if isBreak { attributes[.foregroundColor] = breakColor }
             let seconds = waiting ? 0 : engine.remainingSeconds
             button.attributedTitle = NSAttributedString(string: " " + TimeFormat.clock(seconds), attributes: attributes)
             button.imagePosition = .imageLeading
-            button.contentTintColor = isBreak ? Theme.restNS : nil
+            button.contentTintColor = isBreak ? breakColor : nil
         }
         button.appearsDisabled = status == .paused
         setFlashing(engine.needsAttention)

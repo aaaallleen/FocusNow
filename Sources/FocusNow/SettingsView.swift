@@ -35,12 +35,20 @@ struct SettingsView: View {
     let calendarModel: CalendarModel
     let calendarPrefs: CalendarPreferences
 
+    @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var scheme
+    private var colors: ThemeColors { ThemeColors(palette, scheme: scheme) }
+
     var body: some View {
         HStack(spacing: 0) {
             List(selection: selection) {
                 ForEach(SettingsSection.allCases) { section in
-                    Label(section.title, systemImage: section.symbol)
-                        .tag(section)
+                    Label {
+                        Text(section.title)
+                    } icon: {
+                        Image(systemName: section.symbol).foregroundStyle(colors.focus)
+                    }
+                    .tag(section)
                 }
             }
             .listStyle(.sidebar)
