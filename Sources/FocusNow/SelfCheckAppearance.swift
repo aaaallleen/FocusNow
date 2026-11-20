@@ -40,8 +40,31 @@ extension AppDelegate {
                 "menubar=\(name(statusItem.button?.effectiveAppearance)) " +
                 "(want window and popover \(want), menubar \(menubar))")
         }
+        // System follows the Mac, not the menu bar: macOS tints the menu bar
+        // from the desktop picture, so it can be dark on a light Mac (or the
+        // reverse). Give the menu bar item the other look and open the popover.
         appearancePrefs.mode = .system
         statusItem.closePopover()
+        await snap.wait(0.6)
+        let other = NSAppearance(named: NSApp.effectiveAppearance.isDark ? .aqua : .darkAqua)
+        statusItem.button?.appearance = other
+        statusItem.showPopover(fromClick: false)
+        await snap.wait(0.6)
+        snap.note("system mode, menu bar tinted \(name(statusItem.button?.effectiveAppearance)): " +
+            "popover=\(name(statusItem.popoverWindow?.contentView?.effectiveAppearance)) (want \(system), the Mac's)")
+        statusItem.closePopover()
+        statusItem.button?.appearance = nil
+        await snap.wait(0.6)
+        // The same with the whole menu bar item window tinted, as macOS does it.
+        let barWindow = statusItem.button?.window
+        let barWindowAppearance = barWindow?.appearance
+        barWindow?.appearance = other
+        statusItem.showPopover(fromClick: false)
+        await snap.wait(0.6)
+        snap.note("system mode, menu bar window tinted \(name(statusItem.button?.effectiveAppearance)): " +
+            "popover=\(name(statusItem.popoverWindow?.contentView?.effectiveAppearance)) (want \(system), the Mac's)")
+        statusItem.closePopover()
+        barWindow?.appearance = barWindowAppearance
         await snap.wait(0.4)
 
         // A colourway change keeps what's on screen: here, last week's Stats.
