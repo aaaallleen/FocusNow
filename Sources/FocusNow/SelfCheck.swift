@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "menubar", "outside", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "motion", "menubar", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -20,6 +20,7 @@ extension AppDelegate {
         if phases.contains("timer") { await checkTimer(snap) }
         if phases.contains("digits") { await checkDigits(snap) }
         if phases.contains("commits") { await checkCommits(snap) }
+        if phases.contains("motion") { await checkMotion(snap) }
         if phases.contains("persist") {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
