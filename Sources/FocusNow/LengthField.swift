@@ -24,6 +24,8 @@ struct LengthField: View {
     @State private var text = ""
     @FocusState private var focused: Bool
     @State private var editID = UUID()
+    /// Goes up each time typed text can't be read, to shake the field.
+    @State private var rejections = 0
     @Environment(\.pendingEdits) private var pendingEdits
 
     init(_ label: String, value: Binding<Int>, range: ClosedRange<Int>, step: Int, unit: String?,
@@ -51,6 +53,7 @@ struct LengthField: View {
                 .onSubmit(commit)
                 .onExitCommand(perform: revert)
                 .accessibilityLabel(label)
+                .modifier(RejectShake(trigger: rejections))
             if let unit {
                 Text(unit)
                     .foregroundStyle(.secondary)
@@ -98,7 +101,12 @@ struct LengthField: View {
 
     private func commit() {
         if text != format(value), !InputFeedback.isBlank(text) {
-            if let parsed = parse(text) { value = parsed } else { InputFeedback.rejected() }
+            if let parsed = parse(text) {
+                value = parsed
+            } else {
+                InputFeedback.rejected()
+                rejections += 1
+            }
         }
         text = format(value)
     }

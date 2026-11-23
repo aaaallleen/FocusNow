@@ -64,6 +64,9 @@ struct AppearancePane: View {
             }
         }
         .formStyle(.grouped)
+        // "Your colors" eases in and out. Only when Custom is picked or left:
+        // one preset to another recolours at once, for comparing them.
+        .animation(Theme.easeOut(0.25), value: isCustom)
     }
 
     /// A colour that can't be read as sRGB (a pattern) keeps the colour before it.
@@ -102,9 +105,18 @@ private struct ColorwayTile<Swatch: View>: View {
                 .strokeBorder(selected ? Color.accentColor : Color.clear, lineWidth: 2))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TileButtonStyle())
         .accessibilityLabel(name)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The tile as drawn, shrinking to 0.97 while pressed like every other control.
+private struct TileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? Theme.pressScale : 1)
+            .animation(.easeOut(duration: Theme.pressDuration), value: configuration.isPressed)
     }
 }
 

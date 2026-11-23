@@ -105,6 +105,8 @@ struct TimerRing: View {
     @State private var initialDraft = ""
     @FocusState private var fieldFocused: Bool
     @State private var editID = UUID()
+    /// Goes up each time typed text can't be read, to shake the digits.
+    @State private var rejections = 0
     @Environment(\.pendingEdits) private var pendingEdits
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
@@ -130,6 +132,7 @@ struct TimerRing: View {
                 .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: progress)
             digits
                 .padding(.horizontal, lineWidth * 1.5)
+                .modifier(RejectShake(trigger: rejections, distance: diameter * 6 / 150))
         }
         .frame(width: diameter, height: diameter)
         // A new session gets a fresh ring, so it never sweeps backwards.
@@ -199,6 +202,9 @@ struct TimerRing: View {
         guard apply, draft != initialDraft, !InputFeedback.isBlank(draft) else { return }
         guard let minutes = LengthInput.timerDigits(draft, in: TimerSettings.minuteRange) else {
             InputFeedback.rejected()
+            // After the field has turned back into the digits: a shake asked for
+            // in the same update as that swap doesn't play.
+            Task { rejections += 1 }
             return
         }
         engine.setNextFocus(minutes: minutes)
