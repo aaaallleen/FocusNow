@@ -29,7 +29,7 @@ extension AppDelegate {
             await snap.wait(0.2)
             snap.capture(frameView, as: name, scale: 1)
         }
-        func toggles() -> Int { ["Work", "Home", "Birthdays"].filter(present).count }
+        func toggles() -> Int { ["Work", "Home", "Birthdays"].filter { present($0) }.count }
         func shows(_ text: String) -> Bool { snap.containsText(text, in: window) }
 
         snap.note("calendar source=fake page=\(mainState.page) section=\(mainState.settingsSection) " +
