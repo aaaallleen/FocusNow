@@ -32,6 +32,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 /// Page 3 of the main window: a sidebar of sections beside the chosen one.
 /// Settings apply as soon as they change; there is no Save button.
 struct SettingsView: View {
+    static let runOverSwitchIdentifier = "cycle-run-over"
+    static let runOverCaption = "When a focus reaches zero, the clock keeps counting up until you start your break. "
+        + "The extra time counts as focus. It stops after 10 minutes without keyboard or mouse use."
+
     @Bindable var settings: SettingsStore
     @Bindable var state: MainWindowState
     let calendarModel: CalendarModel
@@ -121,6 +125,19 @@ private struct CyclePane: View {
                         parse: { LengthInput.sessions($0, in: TimerSettings.sessionsRange) },
                         format: { "\($0)" }, fieldWidth: Self.fieldWidth, unitWidth: Self.unitWidth)
                 }
+            }
+            Section {
+                Toggle("Allow time to run over", isOn: $settings.settings.allowRunOver)
+                    .toggleStyle(.switch)
+                    .accessibilityIdentifier(SettingsView.runOverSwitchIdentifier) // the self-check presses it
+            } footer: {
+                Text(SettingsView.runOverCaption)
+                    // A grouped form lines footers up on the right; two lines read better from the left.
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10) // under the row's label, not the box's edge
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

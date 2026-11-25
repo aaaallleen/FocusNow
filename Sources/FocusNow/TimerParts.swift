@@ -144,7 +144,7 @@ struct TimerRing: View {
     }
 
     private var clockText: some View {
-        Text(TimeFormat.clock(engine.remainingSeconds))
+        Text(engine.clockLabel) // "+4:12" past zero while running over
             .font(digitFont)
             .monospacedDigit()
             .contentTransition(.identity)

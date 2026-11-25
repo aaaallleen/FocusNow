@@ -236,8 +236,9 @@ final class StatusItemController: NSObject {
             let p = palette()
             let breakColor = NSColor.dynamic(light: p.breakLight, dark: p.breakDark)
             if isBreak { attributes[.foregroundColor] = breakColor }
-            let seconds = waiting ? 0 : engine.remainingSeconds
-            button.attributedTitle = NSAttributedString(string: " " + TimeFormat.clock(seconds), attributes: attributes)
+            // Past zero while running over: "+4:12".
+            let clock = waiting ? TimeFormat.clock(0) : engine.clockLabel
+            button.attributedTitle = NSAttributedString(string: " " + clock, attributes: attributes)
             button.imagePosition = .imageLeading
             button.contentTintColor = isBreak ? breakColor : nil
         }

@@ -32,9 +32,17 @@ final class FinishAlerter: NSObject, UNUserNotificationCenterDelegate {
         Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) }
     }
 
+    /// The notification's title and body. A focus running over hasn't ended:
+    /// its time is up, and the clock keeps going.
+    static func message(for kind: SessionKind, runningOver: Bool) -> (title: String, body: String) {
+        if runningOver { return ("Focus time is up", "The clock keeps running until you start your break.") }
+        if kind == .focus { return ("Focus session finished", "Start your break when you're ready.") }
+        return ("Break finished", "Ready for the next focus session?")
+    }
+
     /// Returns whether a sound was (or, in the self-check, would have been) played.
     @discardableResult
-    func sessionFinished(_ kind: SessionKind) -> Bool {
+    func sessionFinished(_ kind: SessionKind, runningOver: Bool = false) -> Bool {
         var played = false
         if settings.settings.soundOn, let sound = NSSound(named: Self.soundName) {
             played = isSelfCheck ? true : sound.play()
@@ -42,13 +50,7 @@ final class FinishAlerter: NSObject, UNUserNotificationCenterDelegate {
         guard !isSelfCheck else { return played }
 
         let content = UNMutableNotificationContent()
-        if kind == .focus {
-            content.title = "Focus session finished"
-            content.body = "Start your break when you're ready."
-        } else {
-            content.title = "Break finished"
-            content.body = "Ready for the next focus session?"
-        }
+        (content.title, content.body) = Self.message(for: kind, runningOver: runningOver)
         content.sound = nil // the app's own sound is the only sound
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
