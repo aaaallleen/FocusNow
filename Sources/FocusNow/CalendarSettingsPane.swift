@@ -36,6 +36,8 @@ struct CalendarPane: View {
             }
         }
         .formStyle(.grouped)
+        // When access is allowed (or taken away), the calendars ease in (or out).
+        .animation(Theme.easeOut(0.3), value: model.access)
     }
 
     @ViewBuilder private var access: some View {

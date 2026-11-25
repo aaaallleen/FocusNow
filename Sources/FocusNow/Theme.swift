@@ -13,6 +13,49 @@ enum Theme {
     static let pressScale: CGFloat = 0.97
     static let pressDuration: Double = 0.15
     static let phaseFade: Double = 0.2
+
+    /// For things arriving: quick to start, soft to land (cubic-bezier 0.23, 1, 0.32, 1).
+    static func easeOut(_ duration: Double) -> Animation {
+        .timingCurve(0.23, 1, 0.32, 1, duration: duration)
+    }
+}
+
+/// Shakes its content sideways once each time `trigger` goes up: the macOS
+/// "that didn't work", for typed text that can't be read, so a value that
+/// snapped back isn't mistaken for one that was applied even with the sound
+/// off. With Reduce Motion it dims for a moment in place instead.
+struct RejectShake: ViewModifier {
+    let trigger: Int
+    /// How far the first swing goes, in points.
+    var distance: CGFloat = 6
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Frame {
+        var x: CGFloat = 0
+        var opacity: Double = 1
+    }
+
+    func body(content: Content) -> some View {
+        // 0 → −1 → 0.83 → −0.5 → 0.33 → 0 of `distance`, over 0.3 s; each
+        // swing eases in and out, so it never goes past these.
+        let swing = reduceMotion ? 0 : distance
+        content.keyframeAnimator(initialValue: Frame(), trigger: trigger) { view, frame in
+            view.offset(x: frame.x).opacity(frame.opacity)
+        } keyframes: { _ in
+            KeyframeTrack(\.x) {
+                LinearKeyframe(-swing, duration: 0.05, timingCurve: .easeInOut)
+                LinearKeyframe(swing * 0.83, duration: 0.06, timingCurve: .easeInOut)
+                LinearKeyframe(-swing * 0.5, duration: 0.06, timingCurve: .easeInOut)
+                LinearKeyframe(swing * 0.33, duration: 0.06, timingCurve: .easeInOut)
+                LinearKeyframe(0, duration: 0.07, timingCurve: .easeOut)
+            }
+            KeyframeTrack(\.opacity) {
+                LinearKeyframe(reduceMotion ? 0.4 : 1, duration: 0.12, timingCurve: .easeInOut)
+                LinearKeyframe(1, duration: 0.18, timingCurve: .easeOut)
+            }
+        }
+    }
 }
 
 extension EnvironmentValues {
