@@ -80,6 +80,19 @@ extension AppDelegate {
         fakeIdleSeconds = 0
         await reset()
 
+        // Carrying on: Escape (or a click elsewhere) closes the popover the zero
+        // opened and stops the flash, while the clock keeps counting.
+        shortFocus()
+        await snap.wait(3.0)
+        snap.note("runover popover: closesOnOutsideClick=\(statusItem.closesOnOutsideClick) (want true)")
+        if let popover = statusItem.popoverWindow {
+            await snap.postKey(53, characters: "\u{1b}", in: popover)
+        }
+        await snap.wait(0.6)
+        snap.note("runover escape: visible=\(statusItem.popoverWindowVisible) attention=\(engine.needsAttention) " +
+            "over=\(engine.isRunningOver) flashing=\(statusItem.isFlashing) (want false false true false)")
+        await reset()
+
         // Switched off: a focus finishes at zero, as before.
         settings.settings.allowRunOver = false
         shortFocus()

@@ -64,10 +64,11 @@ final class StatusItemController: NSObject {
 
     /// Opened by a click: the app activates and the popover closes on a click outside.
     /// Opened by a finished countdown: the frontmost app keeps keyboard focus and
-    /// the popover stays until the owner responds.
-    func showPopover(fromClick: Bool) {
+    /// the popover stays until the owner responds, unless `closesOnOutsideClick`
+    /// says otherwise (a focus running over, where carrying on is an answer).
+    func showPopover(fromClick: Bool, closesOnOutsideClick: Bool? = nil) {
         guard let button = item.button else { return }
-        closesOnOutsideClick = fromClick
+        self.closesOnOutsideClick = closesOnOutsideClick ?? fromClick
         recoverFromAMissedClose()
         if isClosing {
             reopenWhenClosed = true
@@ -151,7 +152,7 @@ final class StatusItemController: NSObject {
             let handled = MainActor.assumeIsolated { () -> Bool in
                 guard let self, isEscape, let popover = self.popoverWindow, window === popover,
                       self.closesOnOutsideClick, !(popover.firstResponder is NSText) else { return false }
-                self.closePopover()
+                self.dismissFromOutside()
                 return true
             }
             return handled ? nil : event
@@ -184,7 +185,14 @@ final class StatusItemController: NSObject {
     }
 
     private func interactionOutside() {
-        if closesOnOutsideClick { closePopover() }
+        if closesOnOutsideClick { dismissFromOutside() }
+    }
+
+    /// Closed by a click elsewhere or Escape. While a focus runs over, that's
+    /// carrying on: it answers the finish, so the flash stops too.
+    private func dismissFromOutside() {
+        if engine.isRunningOver { engine.acknowledge() }
+        closePopover()
     }
 
     // MARK: - Drawing

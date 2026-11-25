@@ -73,7 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         engine.onFinish = { [weak self] kind in
             guard let self else { return }
-            statusItem.showPopover(fromClick: false)
+            // Running over, carrying on is an answer: a click elsewhere closes it.
+            statusItem.showPopover(fromClick: false, closesOnOutsideClick: engine.isRunningOver)
             alerter.sessionFinished(kind, runningOver: engine.isRunningOver)
         }
         alerter.onNotificationClicked = { [weak self] in
