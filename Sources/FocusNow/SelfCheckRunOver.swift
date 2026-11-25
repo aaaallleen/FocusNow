@@ -61,6 +61,21 @@ extension AppDelegate {
             "attention=\(engine.needsAttention) popover=\(statusItem.popoverWindowVisible) " +
             "(want running true true true true true) label=\(engine.clockLabel)")
 
+        // Only the main button (Start break) is filled: Pause beneath it looks
+        // like Skip break beside it. Compared on a patch of each button's fill,
+        // left of its title.
+        if let popover = statusItem.popoverWindow {
+            func fill(_ label: String) -> Int? {
+                snap.accessibilityFrame(of: label, in: popover).flatMap {
+                    snap.fingerprint(of: NSRect(x: $0.minX + 4, y: $0.midY - 1.5, width: 3, height: 3), in: popover)
+                }
+            }
+            let pause = fill("Pause"), skip = fill("Skip break")
+            snap.note("runover buttons: found=\(pause != nil && skip != nil) pauseLikeSkip=\(pause == skip) (want true true)")
+            // Drawn offscreen: a capture of the live popover leaves out its primary-styled text.
+            snap.render(PopoverView(engine: engine, settings: settings, appearance: appearancePrefs), as: "popover-run-over")
+        }
+
         // Start break saves one finished focus with the time past zero in it.
         if let popover = statusItem.popoverWindow {
             _ = await snap.press(accessibilityLabel: "Start break", in: popover)

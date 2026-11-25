@@ -247,7 +247,9 @@ struct TimerControlsRow: View {
     private func button(_ control: TimerControl) -> some View {
         Button(Self.title(for: control)) { perform(control) }
             .buttonStyle(PressableButtonStyle(
-                prominent: isPrimary(control), tint: colors.color(for: engine.displayedKind),
+                // Only the top button is filled. Running over puts Pause (or,
+                // paused, Start break) in the row beneath, where it stays plain.
+                prominent: control == engine.controlRows.main, tint: colors.color(for: engine.displayedKind),
                 text: colors.text(on: engine.displayedKind), scale: scale))
     }
 
@@ -300,10 +302,6 @@ struct TimerControlsRow: View {
         case .skip: "Skip"
         case .adjustLength: ""
         }
-    }
-
-    private func isPrimary(_ control: TimerControl) -> Bool {
-        [.startFocus, .startBreak, .pause, .resume].contains(control)
     }
 }
 
