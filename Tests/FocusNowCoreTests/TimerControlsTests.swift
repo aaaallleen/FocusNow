@@ -176,4 +176,31 @@ struct TimerControlsTests {
         h.run(3723 - 252)
         #expect(e.clockLabel == "+1:02:03")
     }
+
+    @Test func flowControlsAndRows() {
+        e.chooseFlow(true)
+        #expect(e.controls == [.startFlow])
+        #expect(e.controlRows == ControlRows(main: .startFlow, others: []))
+        #expect(e.clockLabel == "00:00"); #expect(e.cycleLine == "")
+        e.start()
+        #expect(e.controls == [.stop, .pause])
+        #expect(e.controlRows == ControlRows(main: .stop, others: [.pause]))
+        e.pause()
+        #expect(e.controlRows == ControlRows(main: .resume, others: [.stop]))
+    }
+
+    @Test func flowClockAndLaps() {
+        e.chooseFlow(true); e.start(); h.run(3130)
+        #expect(e.clockLabel == "52:10"); #expect(e.flowLap?.completed == 0)
+        #expect(abs((e.flowLap?.fraction ?? 0) - 3130.0 / 3600) < 0.0001)
+        h.run(5070 - 3130)
+        #expect(e.clockLabel == "1:24:30"); #expect(e.flowLap?.completed == 1)
+        #expect(abs((e.flowLap?.fraction ?? 0) - 1470.0 / 3600) < 0.0001)
+    }
+
+    @Test func cycleLineWithFocusChosen() {
+        #expect(e.cycleLine == "1 OF 4"); #expect(e.flowLap == nil)
+        e.start(); h.run(2400)
+        #expect(e.cycleLine == "BREAK")
+    }
 }

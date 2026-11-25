@@ -303,6 +303,21 @@ extension DebugSnapshots {
         return hasher.finalize()
     }
 
+    /// The average colour drawn in `rect` (screen coordinates), in sRGB.
+    func averageColour(of rect: NSRect, in window: NSWindow) -> SRGBColor? {
+        guard let (rep, _) = pixels(in: rect, of: window) else { return nil }
+        var sum = (r: 0.0, g: 0.0, b: 0.0), count = 0.0
+        for y in 0..<rep.pixelsHigh {
+            for x in 0..<rep.pixelsWide {
+                guard let c = rep.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                sum = (sum.r + c.redComponent, sum.g + c.greenComponent, sum.b + c.blueComponent)
+                count += 1
+            }
+        }
+        guard count > 0 else { return nil }
+        return SRGBColor(red: sum.r / count, green: sum.g / count, blue: sum.b / count)
+    }
+
     /// `rect` (screen coordinates) of the window's content as drawn now.
     private func pixels(in rect: NSRect, of window: NSWindow) -> (NSBitmapImageRep, NSRect)? {
         guard let view = window.contentView else { return nil }

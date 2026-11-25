@@ -38,6 +38,9 @@ public struct SessionRecord: Codable, Equatable, Identifiable, Sendable {
         self.outcome = outcome
         self.origin = origin
     }
+
+    /// A flow: a focus with no set length (no other session plans 0 seconds).
+    public var isFlow: Bool { kind == .focus && plannedSeconds == 0 }
 }
 
 /// The session currently running or paused.
@@ -68,6 +71,9 @@ public struct ActiveSession: Codable, Equatable, Sendable {
         self.lastResumedAt = lastResumedAt
         self.timeUpAt = timeUpAt
     }
+
+    /// A flow: a focus with no set length, counting up from its start.
+    public var isFlow: Bool { kind == .focus && plannedSeconds == 0 }
 
     /// Active (non-blank) seconds as of `date`.
     public func activeSeconds(at date: Date) -> TimeInterval {
@@ -103,14 +109,18 @@ public struct EngineSnapshot: Codable, Equatable, Sendable {
     /// The focus length set on the timer, if any. Snapshots saved before it
     /// existed decode as nil.
     public var focusOverride: FocusOverride?
+    /// The timer's Focus | Flow switch: true for Flow. Snapshots saved before
+    /// it existed decode as nil, which is Focus.
+    public var flowChosen: Bool?
 
     public init(active: ActiveSession?, savedAt: Date, cyclePosition: Int, cycleDay: Date, nextKind: SessionKind,
-                focusOverride: FocusOverride? = nil) {
+                focusOverride: FocusOverride? = nil, flowChosen: Bool? = nil) {
         self.active = active
         self.savedAt = savedAt
         self.cyclePosition = cyclePosition
         self.cycleDay = cycleDay
         self.nextKind = nextKind
         self.focusOverride = focusOverride
+        self.flowChosen = flowChosen
     }
 }

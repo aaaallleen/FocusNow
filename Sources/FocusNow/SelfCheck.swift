@@ -8,7 +8,7 @@ extension AppDelegate {
     /// FOCUSNOW_SELFCHECK picks phases (comma-separated: popover, stats); default is all.
     func runSelfCheck(_ snap: DebugSnapshots) async {
         let phases = ProcessInfo.processInfo.environment["FOCUSNOW_SELFCHECK"]?
-            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "motion", "runover", "menubar", "outside", "popover"]
+            .split(separator: ",").map(String.init) ?? ["stats", "settings", "calendar", "appearance", "timer", "digits", "commits", "motion", "runover", "flow", "menubar", "outside", "popover"]
         await snap.wait(0.5)
         snap.note("launched from \(Bundle.main.bundlePath): policy=\(policyName) mainVisible=\(windows.isMainVisible) page=\(mainState.page) " +
             "icon=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleIconFile") as? String ?? "none") " +
@@ -22,6 +22,7 @@ extension AppDelegate {
         if phases.contains("commits") { await checkCommits(snap) }
         if phases.contains("motion") { await checkMotion(snap) }
         if phases.contains("runover") { await checkRunOver(snap) }
+        if phases.contains("flow") { await checkFlow(snap) }
         if phases.contains("persist") {
             let s = settings.settings
             snap.note("after relaunch: focus=\(s.focusMinutes) goal=\(TimeFormat.duration(s.dailyGoalSeconds)) sound=\(s.soundOn) " +
@@ -658,7 +659,7 @@ extension AppDelegate {
                 let zoom = max(1, min(bounds.width / 760, bounds.height / 560))
                 let button = snap.accessibilityFrame(of: TimerControlsRow.title(for: engine.controlRows.main), in: window)?.size ?? .zero
                 let row = snap.readable(in: window).first { $0.identifier == UpcomingEventsView.rowIdentifier }?.frame.height ?? 0
-                let labelHeight = snap.readable(in: window).first { $0.text == engine.phaseLabel }?.frame.height ?? 0
+                let labelHeight = snap.readable(in: window).first { $0.text == engine.cycleLine }?.frame.height ?? 0
                 if events, zoom == 1, base == nil { base = (button, row, labelHeight) }
                 if let base {
                     func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) <= max(1.5, b * 0.06) }
@@ -671,11 +672,13 @@ extension AppDelegate {
                                      labelHeight, base.label * zoom, ok ? "true" : "false"))
                 }
                 let content = window.contentView.map { window.convertToScreen($0.convert($0.bounds, to: nil)) } ?? .zero
-                let label = snap.readable(in: window).first { $0.text == engine.phaseLabel }?.frame
+                let label = snap.readable(in: window).first { $0.text == engine.cycleLine }?.frame
                 let ring = visibleRing(snap, in: window)
                 let main = snap.accessibilityFrame(of: TimerControlsRow.title(for: engine.controlRows.main), in: window)
                 let lowest = snap.readable(in: window).map(\.frame).filter { $0.width > 0 && $0.minY < content.maxY }
                     .map(\.minY).min() ?? 0
+                // The Focus | Flow switch is the top of the page: it must fit below the toolbar too.
+                let top = snap.accessibilityFrame(of: TimerHeader.switchIdentifier, in: window)?.maxY ?? .infinity
                 let name = "\(Int(window.contentView?.bounds.width ?? 0))x\(Int(window.contentView?.bounds.height ?? 0))"
                 guard let label, let ring, let main else {
                     snap.note("gaps \(name) events=\(events ? "on" : "off"): label=\(label != nil) ring=\(ring != nil) " +
@@ -684,7 +687,7 @@ extension AppDelegate {
                 }
                 snap.note("gaps \(name) events=\(events ? "on" : "off"): above=\(Int((label.minY - ring.maxY).rounded())) " +
                     "below=\(Int((ring.minY - main.maxY).rounded())) ring=\(Int(ring.height)) " +
-                    "fits=\(lowest >= content.minY - 0.5) (want ≥22 ≥22 ≥120 true)")
+                    "fits=\(lowest >= content.minY - 0.5 && top <= content.maxY + 0.5) (want ≥22 ≥22 ≥120 true)")
                 if size == sizes.last, events {
                     window.appearance = NSAppearance(named: .aqua)
                     await snap.wait(0.2)

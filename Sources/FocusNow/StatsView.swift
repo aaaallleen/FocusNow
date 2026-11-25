@@ -245,7 +245,7 @@ private struct SessionRow: View {
     }
 
     private var detail: String {
-        let length = TimeFormat.duration(session.activeSeconds) + " focus"
+        let length = TimeFormat.duration(session.activeSeconds) + (session.isFlow ? " flow" : " focus")
         return session.outcome == .endedEarly ? length + " · ended early" : length
     }
 }

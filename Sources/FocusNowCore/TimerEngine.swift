@@ -50,6 +50,10 @@ public final class TimerEngine {
         set { focusOverride = newValue.map { FocusOverride(seconds: $0, focusMinutes: settings().focusMinutes) } }
     }
     private var focusOverride: FocusOverride?
+    /// The timer's Focus | Flow switch: whether Start begins a flow (a focus
+    /// with no set length) instead of a Pomodoro focus. Saved, so it survives
+    /// a relaunch.
+    public private(set) var flowChosen = false
     /// Increments every time a session record is saved.
     public private(set) var savedSessionCount = 0
 
@@ -95,8 +99,15 @@ public final class TimerEngine {
         return max(0, Int(left.rounded(.up)))
     }
 
-    /// A focus past zero that keeps counting up until the owner ends it.
+    /// A focus past zero that keeps counting up until the owner ends it. A
+    /// flow is one too, from its first second.
     public var isRunningOver: Bool { active?.timeUpAt != nil }
+
+    /// A flow is running or paused.
+    public var isFlowing: Bool { active?.isFlow == true }
+
+    /// The Focus | Flow switch can change only while idle with a focus next.
+    public var canChooseFlow: Bool { status == .idle && nextKind == .focus }
 
     /// Whole active seconds past zero, rounded down; 0 unless running over.
     public var overtimeSeconds: Int {
@@ -131,13 +142,31 @@ public final class TimerEngine {
 
     // MARK: - Actions
 
-    /// Starts the next session. While a focus runs over (Start break), ends it
-    /// first, with all its time, and starts the break.
+    /// Sets the Focus | Flow switch. Does nothing unless `canChooseFlow`.
+    public func chooseFlow(_ on: Bool) {
+        guard canChooseFlow else { return }
+        flowChosen = on
+        saveSnapshot()
+    }
+
+    /// Starts the next session: a flow when the switch is on Flow and a focus
+    /// is next. While a focus runs over (Start break), ends it first, with all
+    /// its time, and starts the break. Does nothing while flowing.
     public func start() {
         refreshNow()
+        guard !isFlowing else { return }
         endRunOver()
         guard status == .idle else { return }
         rollOverDayIfNeeded()
+        if nextKind == .focus, flowChosen {
+            // Counting up from the first second; outside the cycle, so the
+            // cycle's day isn't touched.
+            active = ActiveSession(kind: .focus, startedAt: now, plannedSeconds: 0, lastResumedAt: now, timeUpAt: now)
+            status = .running
+            needsAttention = false
+            saveSnapshot()
+            return
+        }
         cycleDay = calendar.startOfDay(for: now)
         let planned = plannedSecondsForNext
         active = ActiveSession(kind: nextKind, startedAt: now, plannedSeconds: planned, lastResumedAt: now)
@@ -180,6 +209,7 @@ public final class TimerEngine {
     /// focus is current or next.
     public func skipBreak() {
         refreshNow()
+        guard !isFlowing else { return }
         endRunOver()
         if let session = active {
             guard session.kind.isBreak else { return }
@@ -194,6 +224,13 @@ public final class TimerEngine {
 
     public func acknowledge() {
         needsAttention = false
+    }
+
+    /// Ends a running or paused flow and saves it (if it reached a minute).
+    public func stop() {
+        refreshNow()
+        guard let session = active, session.isFlow else { return }
+        finish(session, outcome: .completed, at: now, notify: false)
     }
 
     public func tick() {
@@ -213,7 +250,8 @@ public final class TimerEngine {
             let idle = idleSeconds()
             if idle >= Self.runOverIdleLimitSeconds {
                 finish(session, outcome: .completed, at: max(timeUpAt, now.addingTimeInterval(-idle)), notify: false)
-                needsAttention = true
+                // A run-over leaves its break waiting; a flow just stops.
+                if !session.isFlow { needsAttention = true }
                 return
             }
         } else if let endsAt = session.endsAt, now >= endsAt {
@@ -234,8 +272,9 @@ public final class TimerEngine {
     }
 
     /// Ends a focus that is running over as completed, with all its time.
+    /// Not a flow: only Stop (or the idle stop, or quitting) ends one.
     private func endRunOver() {
-        guard let session = active, session.timeUpAt != nil else { return }
+        guard let session = active, session.timeUpAt != nil, !session.isFlow else { return }
         finish(session, outcome: .completed, at: now, notify: false)
     }
 
@@ -248,6 +287,9 @@ public final class TimerEngine {
     /// The app is quitting: log the session so far, as End early would.
     public func prepareForQuit() {
         refreshNow()
+        if let session = active, session.isFlow {
+            finish(session, outcome: .completed, at: now, notify: false) // a flow has no early end
+        }
         endRunOver() // it reached zero: a finished focus, not an early end
         if status != .idle, let session = active {
             finish(session, outcome: .endedEarly, at: now)
@@ -295,7 +337,7 @@ public final class TimerEngine {
         lastSnapshotAt = now
         snapshots.save(EngineSnapshot(
             active: active, savedAt: now, cyclePosition: cyclePosition,
-            cycleDay: cycleDay, nextKind: nextKind, focusOverride: focusOverride))
+            cycleDay: cycleDay, nextKind: nextKind, focusOverride: focusOverride, flowChosen: flowChosen))
     }
 
     /// Restores the cycle from the last run and logs a session the last run
@@ -307,6 +349,7 @@ public final class TimerEngine {
         cycleDay = snapshot.cycleDay
         // Set against another Focus default (changed while the app was closed): gone.
         focusOverride = snapshot.focusOverride.flatMap { $0.focusMinutes == settings().focusMinutes ? $0 : nil }
+        flowChosen = snapshot.flowChosen ?? false
         if let session = snapshot.active {
             if session.timeUpAt != nil {
                 // It reached zero: a finished focus, with its time past zero up to the checkpoint.
@@ -350,6 +393,10 @@ public final class TimerEngine {
     /// Ends `session` at `end`, logging it unless it is a focus session ended
     /// before the one-minute minimum.
     private func finish(_ session: ActiveSession, outcome: Outcome, at end: Date, notify: Bool = true) {
+        if session.isFlow {
+            finishFlow(session, at: end)
+            return
+        }
         let measured = Int(session.activeSeconds(at: end).rounded())
         // A focus that ran over keeps all its time; otherwise at most the planned length.
         let activeSeconds = session.timeUpAt != nil ? measured : min(session.plannedSeconds, measured)
@@ -378,5 +425,22 @@ public final class TimerEngine {
             needsAttention = true
             onFinish?(session.kind)
         }
+    }
+
+    /// Ends a flow at `end`: saved as a finished focus with all its time (from
+    /// a minute up), and outside the cycle, so nothing about the cycle moves —
+    /// not its position, its next kind, its day, or its last finish.
+    private func finishFlow(_ session: ActiveSession, at end: Date) {
+        active = nil
+        status = .idle
+        let activeSeconds = Int(session.activeSeconds(at: end).rounded())
+        if activeSeconds >= Self.minimumLoggedFocusSeconds {
+            sessions.save(SessionRecord(
+                id: session.id, kind: .focus, startedAt: session.startedAt, endedAt: end,
+                plannedSeconds: 0, activeSeconds: activeSeconds, outcome: .completed, origin: .manual))
+            todayCache = nil
+            savedSessionCount += 1
+        }
+        saveSnapshot()
     }
 }

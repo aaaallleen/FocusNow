@@ -81,6 +81,8 @@ struct ThemeColors {
 
     var focus: Color { Color(palette.focus(dark: dark)) }
     var rest: Color { Color(palette.rest(dark: dark)) }
+    /// A flow's second hour (and every other one after): a deeper shade of the focus colour.
+    var focusSecondLap: Color { Color(palette.focus(dark: dark).secondLapShade()) }
 
     func color(for kind: SessionKind) -> Color { kind.isBreak ? rest : focus }
 

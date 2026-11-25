@@ -25,7 +25,7 @@ struct TimerPageView: View {
             let width = TimerPageLayout.columnWidth * scale
             VStack(spacing: spacing) {
                 let diameter = TimerPageLayout.diameter(for: size, eventsHeight: eventsHeight)
-                PhaseLabel(engine: engine, size: 13 * scale)
+                TimerHeader(engine: engine, size: 13 * scale, onAction: onAction)
                 TimerRing(engine: engine, diameter: diameter, editable: true)
                     // A bigger ring gets more room above and below.
                     .padding(.vertical, TimerPageLayout.ringGap(for: diameter, scale: scale) - spacing)
@@ -69,9 +69,10 @@ enum TimerPageLayout {
     static let columnWidth: CGFloat = 320
     /// The window content size the page is designed at (scale 1).
     static let designSize = CGSize(width: 760, height: 560)
-    /// The phase label, both rows of controls, today's bar and the spacing
-    /// between them (the second row is 27 pt plus a 6 pt gap), at scale 1.
-    private static let reserved: CGFloat = 203
+    /// The Focus | Flow switch and the line under it, both rows of controls,
+    /// today's bar and the spacing between them (the second row is 27 pt plus
+    /// a 6 pt gap; the switch 29 pt plus a 4 pt gap above the line), at scale 1.
+    private static let reserved: CGFloat = 236
 
     /// 1 up to the default window size, then growing with the window; the
     /// smaller of the two directions decides, so the page always fits.

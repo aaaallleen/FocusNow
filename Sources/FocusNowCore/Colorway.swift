@@ -40,6 +40,20 @@ public struct SRGBColor: Equatable, Codable, Sendable {
         let (a, b) = (luminance, other.luminance)
         return (max(a, b) + 0.05) / (min(a, b) + 0.05)
     }
+
+    /// The colour a flow's second hour fills over its first in: 45 % deeper,
+    /// or 45 % lighter for a colour too dark for a deeper shade to show.
+    public func secondLapShade() -> SRGBColor {
+        let deeper = mixed(toward: SRGBColor(red: 0, green: 0, blue: 0), by: 0.45)
+        if deeper.contrast(with: self) >= 1.4 { return deeper }
+        return mixed(toward: SRGBColor(red: 1, green: 1, blue: 1), by: 0.45)
+    }
+
+    private func mixed(toward other: SRGBColor, by amount: Double) -> SRGBColor {
+        SRGBColor(red: red + (other.red - red) * amount,
+                  green: green + (other.green - green) * amount,
+                  blue: blue + (other.blue - blue) * amount)
+    }
 }
 
 /// Text drawn on a colour fill: white, or near-black (#141414).

@@ -72,16 +72,72 @@ struct CursorArea: NSViewRepresentable {
     }
 }
 
-/// "FOCUS · 1 of 4", "BREAK", "LONG BREAK".
-struct PhaseLabel: View {
+/// The top of the timer: the Focus | Flow switch, and under it where the cycle
+/// stands ("1 of 4", "BREAK", "LONG BREAK"), blank for a flow. The line keeps
+/// its height when blank, so nothing below moves when the switch changes.
+/// Everything scales with `size` (11 in the popover), so the Timer page's zoom
+/// takes the switch along with the rest.
+struct TimerHeader: View {
+    static let switchIdentifier = "timer-focus-flow"
+
     let engine: TimerEngine
     var size: CGFloat = 11
+    /// Told when the switch is used, as −/+ report it: a choice about the next
+    /// session, so it answers a popover a finish opened.
+    var onAction: (TimerControl) -> Void = { _ in }
+
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.pendingEdits) private var pendingEdits
+    private var k: CGFloat { size / 11 }
 
     var body: some View {
-        Text(engine.phaseLabel)
-            .font(.system(size: size, weight: .semibold))
-            .tracking(0.8 * size / 11)
-            .foregroundStyle(.secondary)
+        VStack(spacing: 4 * k) {
+            HStack(spacing: 0) {
+                segment("Focus", flow: false)
+                segment("Flow", flow: true)
+            }
+            .padding(2 * k)
+            .background(RoundedRectangle(cornerRadius: 7 * k, style: .continuous).fill(Color.primary.opacity(0.08)))
+            // Locked during a session or a break: dimmed, and VoiceOver says so.
+            .opacity(engine.canChooseFlow ? 1 : 0.45)
+            .disabled(!engine.canChooseFlow)
+            // One control to VoiceOver, "Focus or Flow", holding its two
+            // choices with the chosen one marked selected.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Focus or Flow")
+            .accessibilityIdentifier(Self.switchIdentifier)
+            Text(engine.cycleLine.isEmpty ? " " : engine.cycleLine)
+                .font(.system(size: size, weight: .semibold))
+                .tracking(0.8 * size / 11)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func segment(_ title: String, flow: Bool) -> some View {
+        let selected = engine.flowChosen == flow
+        return Button {
+            // A length typed into the digits is applied first, as every other
+            // control on the surface applies it.
+            pendingEdits?.commitAll()
+            engine.chooseFlow(flow)
+            onAction(.adjustLength)
+        } label: {
+            Text(title)
+                .font(.system(size: 12 * k, weight: .semibold))
+                .foregroundStyle(selected ? .primary : .secondary)
+                .padding(.vertical, 4 * k)
+                .padding(.horizontal, 16 * k)
+                .background {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 5 * k, style: .continuous)
+                            .fill(scheme == .dark ? Color.white.opacity(0.2) : Color.white)
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -111,6 +167,28 @@ struct TimerRing: View {
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
     private var tint: Color { ThemeColors(palette, scheme: scheme).color(for: engine.displayedKind) }
+
+    /// A flow fills the ring once an hour: the hour before shows full beneath,
+    /// and the colours alternate (the focus colour, then its second shade), so
+    /// there's always something moving.
+    @ViewBuilder private func flowLaps(_ lap: (completed: Int, fraction: Double)) -> some View {
+        if lap.completed > 0 {
+            Circle().inset(by: lineWidth / 2).stroke(lapColour(lap.completed - 1), lineWidth: lineWidth)
+        }
+        Circle()
+            .inset(by: lineWidth / 2)
+            .trim(from: 0, to: lap.fraction)
+            .stroke(lapColour(lap.completed), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: lap.fraction)
+            // A new hour is a new arc, so it never sweeps backwards from full.
+            .id(lap.completed)
+    }
+
+    private func lapColour(_ hour: Int) -> Color {
+        let colors = ThemeColors(palette, scheme: scheme)
+        return hour % 2 == 0 ? colors.focus : colors.focusSecondLap
+    }
     private var digitFont: Font { .system(size: diameter * 34 / 150, weight: .light) }
     private var canEdit: Bool { editable && engine.controls.contains(.adjustLength) }
 
@@ -123,13 +201,17 @@ struct TimerRing: View {
         // The stroke is drawn inside the frame, so the frame is the ring you see.
         ZStack {
             Circle().inset(by: lineWidth / 2).stroke(Theme.track, lineWidth: lineWidth)
-            Circle()
-                .inset(by: lineWidth / 2)
-                .trim(from: 0, to: progress)
-                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                // Sweeps linearly between ticks so it reads as continuous motion.
-                .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: progress)
+            if let lap = engine.flowLap {
+                flowLaps(lap)
+            } else {
+                Circle()
+                    .inset(by: lineWidth / 2)
+                    .trim(from: 0, to: progress)
+                    .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    // Sweeps linearly between ticks so it reads as continuous motion.
+                    .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: progress)
+            }
             digits
                 .padding(.horizontal, lineWidth * 1.5)
                 .modifier(RejectShake(trigger: rejections, distance: diameter * 6 / 150))
@@ -240,6 +322,11 @@ struct TimerControlsRow: View {
                         button(control)
                     }
                 }
+                if rows.others.isEmpty {
+                    // Start flow stands alone: the row keeps its height, so
+                    // nothing below moves between Focus and Flow.
+                    button(.stop).hidden().accessibilityHidden(true)
+                }
             }
         }
     }
@@ -279,12 +366,13 @@ struct TimerControlsRow: View {
     private func perform(_ control: TimerControl) {
         pendingEdits?.commitAll()
         switch control {
-        case .startFocus, .startBreak: engine.start()
+        case .startFocus, .startBreak, .startFlow: engine.start()
         case .skipBreak, .skip: engine.skipBreak()
         case .pause: engine.pause()
         case .resume: engine.resume()
         case .endEarly: engine.endEarly()
         case .cancel: engine.cancel()
+        case .stop: engine.stop()
         case .adjustLength: break
         }
         onAction(control)
@@ -294,6 +382,8 @@ struct TimerControlsRow: View {
         switch control {
         case .startFocus: "Start focus"
         case .startBreak: "Start break"
+        case .startFlow: "Start flow"
+        case .stop: "Stop"
         case .skipBreak: "Skip break"
         case .pause: "Pause"
         case .resume: "Resume"
