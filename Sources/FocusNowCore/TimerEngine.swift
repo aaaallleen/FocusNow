@@ -248,6 +248,7 @@ public final class TimerEngine {
     /// The app is quitting: log the session so far, as End early would.
     public func prepareForQuit() {
         refreshNow()
+        endRunOver() // it reached zero: a finished focus, not an early end
         if status != .idle, let session = active {
             finish(session, outcome: .endedEarly, at: now)
         }
@@ -273,10 +274,17 @@ public final class TimerEngine {
 
     private func pause(asOf moment: Date) {
         guard status == .running, var session = active else { return }
-        let activeSeconds = session.activeSeconds(at: moment)
-        // Past zero, the time over the planned length is the owner's to keep.
-        session.accumulatedSeconds = session.timeUpAt != nil
-            ? activeSeconds : min(TimeInterval(session.plannedSeconds), activeSeconds)
+        let activeSeconds: TimeInterval
+        if let timeUpAt = session.timeUpAt {
+            // Past zero, the time over the planned length is the owner's to
+            // keep, up to their last input: a Mac that sleeps from idleness
+            // (before the 10-minute stop) mustn't count the minutes it sat idle.
+            let lastInput = now.addingTimeInterval(-idleSeconds())
+            activeSeconds = session.activeSeconds(at: max(timeUpAt, min(moment, lastInput)))
+        } else {
+            activeSeconds = min(TimeInterval(session.plannedSeconds), session.activeSeconds(at: moment))
+        }
+        session.accumulatedSeconds = activeSeconds
         session.lastResumedAt = nil
         active = session
         status = .paused

@@ -126,6 +126,44 @@ struct TimerEngineRunOverTests {
         #expect(decoded.active?.timeUpAt == nil); #expect(decoded.active?.plannedSeconds == 2400)
     }
 
+    /// Quitting (⌘Q, logging out, restarting) while running over: the focus
+    /// did reach zero, so it's a finished one, with all its time.
+    @Test func quittingWhileRunningOverLogsACompletedFocus() throws {
+        e.start(); h.run(2700); e.prepareForQuit()
+        #expect(h.sessions.records.count == 1)
+        let r = try #require(h.sessions.records.first)
+        #expect(r.outcome == .completed); #expect(r.activeSeconds == 2700)
+    }
+
+    @Test func quittingWhilePausedRunningOverLogsACompletedFocus() throws {
+        e.start(); h.run(2700); e.pause(); h.run(60); e.prepareForQuit()
+        #expect(h.sessions.records.count == 1)
+        let r = try #require(h.sessions.records.first)
+        #expect(r.outcome == .completed); #expect(r.activeSeconds == 2700)
+    }
+
+    /// The Mac sleeping from idleness before the 10-minute stop: the idle
+    /// minutes before the sleep don't count either.
+    @Test func sleepAfterIdleMinutesDoesNotCountThem() {
+        e.start(); h.run(2760)                 // input stops 60 s after zero
+        h.idleSeconds = 300; e.systemWillSleep()
+        #expect(e.status == .paused); #expect(e.overtimeSeconds == 60)
+        e.start()
+        #expect(h.sessions.records.first?.activeSeconds == 2460)
+    }
+
+    @Test func blankGapAfterIdleMinutesDoesNotCountThem() {
+        e.start(); h.run(2660)                 // input stops 60 s after zero
+        h.clock.advance(120); h.idleSeconds = 320; e.tick()
+        #expect(e.status == .paused); #expect(e.overtimeSeconds == 60)
+    }
+
+    @Test func idleIsNeverTrimmedBeforeZero() {
+        e.start(); h.run(2430)
+        h.idleSeconds = 900; e.systemWillSleep()
+        #expect(e.overtimeSeconds == 0); #expect(e.isRunningOver)
+    }
+
     @Test func todayTotalIncludesTheExtraTime() {
         e.start(); h.run(2500)
         #expect(e.todayFocusSeconds() == 2500)
