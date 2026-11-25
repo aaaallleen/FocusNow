@@ -82,8 +82,12 @@ struct TimerHeader: View {
 
     let engine: TimerEngine
     var size: CGFloat = 11
+    /// Told when the switch is used, as −/+ report it: a choice about the next
+    /// session, so it answers a popover a finish opened.
+    var onAction: (TimerControl) -> Void = { _ in }
 
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.pendingEdits) private var pendingEdits
     private var k: CGFloat { size / 11 }
 
     var body: some View {
@@ -111,7 +115,13 @@ struct TimerHeader: View {
 
     private func segment(_ title: String, flow: Bool) -> some View {
         let selected = engine.flowChosen == flow
-        return Button { engine.chooseFlow(flow) } label: {
+        return Button {
+            // A length typed into the digits is applied first, as every other
+            // control on the surface applies it.
+            pendingEdits?.commitAll()
+            engine.chooseFlow(flow)
+            onAction(.adjustLength)
+        } label: {
             Text(title)
                 .font(.system(size: 12 * k, weight: .semibold))
                 .foregroundStyle(selected ? .primary : .secondary)

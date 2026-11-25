@@ -69,12 +69,12 @@ extension TimerEngine {
     /// Idle with Flow chosen and a focus next: Start begins a flow.
     var flowIsNext: Bool { status == .idle && nextKind == .focus && flowChosen }
 
-    /// The line under the Focus | Flow switch: where the cycle stands ("1 of 4",
+    /// The line under the Focus | Flow switch: where the cycle stands ("1 OF 4",
     /// "BREAK", "LONG BREAK"), or nothing for a flow, which is outside it.
     public var cycleLine: String {
         if isFlowing || flowIsNext { return "" }
         let label = phaseLabel
-        return label.hasPrefix("FOCUS · ") ? String(label.dropFirst("FOCUS · ".count)) : label
+        return (label.hasPrefix("FOCUS · ") ? String(label.dropFirst("FOCUS · ".count)) : label).uppercased()
     }
 
     /// A flow's ring: hours done, and how far through this one (0..<1). Nil

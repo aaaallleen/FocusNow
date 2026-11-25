@@ -29,6 +29,24 @@ extension AppDelegate {
             return [a.minX - b.minX, a.maxX - b.maxX, a.minY - b.minY, a.maxY - b.maxY].contains { abs($0) > 0.5 }
         }
 
+        // A length typed into the digits, then Flow chosen: what was typed is
+        // kept, as every other control on the surface keeps it.
+        if await snap.press(accessibilityLabel: TimerRing.digitsIdentifier, in: window), window.firstResponder is NSText {
+            await snap.typeIntoFocusedField("50", in: window)
+            let pressed = await snap.press(accessibilityLabel: "Flow", in: window)
+            await snap.wait(0.3)
+            let chose = engine.flowChosen
+            engine.chooseFlow(false)
+            await snap.wait(0.3)
+            snap.note("flow switch keeps typing: pressed=\(pressed) chose=\(chose) next=\(engine.remainingSeconds / 60) " +
+                "(want true true 50)")
+        } else {
+            snap.note("flow switch keeps typing: the digits did not become a field (want a field)")
+        }
+        engine.setNextFocus(minutes: 40)
+        window.makeFirstResponder(nil)
+        await snap.wait(0.4)
+
         // Choosing Flow: Start flow at 00:00, and nothing moves.
         let before = frames()
         engine.chooseFlow(true)
@@ -81,6 +99,28 @@ extension AppDelegate {
         await snap.wait(0.4)
 
         await checkFlowSecondHour(snap)
+
+        // Choosing on the switch in a popover a finish opened counts as using
+        // it, as −/+ do: another app coming forward then closes it.
+        engine.cancel()
+        engine.skipBreak()
+        engine.chooseFlow(false)
+        statusItem.showPopover(fromClick: false)
+        await snap.wait(0.5)
+        if let popover = statusItem.popoverWindow {
+            _ = await snap.press(accessibilityLabel: "Flow", in: popover)
+        }
+        let other = NSWorkspace.shared.runningApplications.first {
+            $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && $0.activationPolicy == .regular
+        }
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.didActivateApplicationNotification, object: NSWorkspace.shared,
+            userInfo: other.map { [NSWorkspace.applicationUserInfoKey: $0] })
+        await snap.wait(0.6)
+        snap.note("flow finish-opened, then Flow chosen, another app forward: visible=\(statusItem.popoverWindowVisible) " +
+            "chosen=\(engine.flowChosen) (want false true)")
+        statusItem.closePopover()
+        await snap.wait(0.6)
 
         engine.cancel()
         engine.chooseFlow(false)

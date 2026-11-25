@@ -199,7 +199,7 @@ struct TimerControlsTests {
     }
 
     @Test func cycleLineWithFocusChosen() {
-        #expect(e.cycleLine == "1 of 4"); #expect(e.flowLap == nil)
+        #expect(e.cycleLine == "1 OF 4"); #expect(e.flowLap == nil)
         e.start(); h.run(2400)
         #expect(e.cycleLine == "BREAK")
     }

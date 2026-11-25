@@ -25,7 +25,7 @@ struct TimerPageView: View {
             let width = TimerPageLayout.columnWidth * scale
             VStack(spacing: spacing) {
                 let diameter = TimerPageLayout.diameter(for: size, eventsHeight: eventsHeight)
-                TimerHeader(engine: engine, size: 13 * scale)
+                TimerHeader(engine: engine, size: 13 * scale, onAction: onAction)
                 TimerRing(engine: engine, diameter: diameter, editable: true)
                     // A bigger ring gets more room above and below.
                     .padding(.vertical, TimerPageLayout.ringGap(for: diameter, scale: scale) - spacing)
