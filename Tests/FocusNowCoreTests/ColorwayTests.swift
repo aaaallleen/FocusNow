@@ -56,4 +56,16 @@ struct ColorwayTests {
         #expect(Palette(hexes: ["#336B82", "#6BB0C9", "#CC9433"]) == nil)
         #expect(Palette(hexes: ["#336B82", "#6BB0C9", "#CC9433", "nope"]) == nil)
     }
+
+    /// A flow's second hour fills over the first in this shade: it must show.
+    @Test func secondLapShadeShowsAgainstEveryFocusColour() {
+        for way in Colorway.presets {
+            for dark in [false, true] {
+                let focus = way.palette.focus(dark: dark)
+                #expect(focus.secondLapShade().contrast(with: focus) >= 1.4, "\(way.id) dark=\(dark)")
+            }
+        }
+        let teal = Colorway.standard.palette.focus(dark: false)
+        #expect(teal.secondLapShade().luminance < teal.luminance)   // deeper, in light mode
+    }
 }

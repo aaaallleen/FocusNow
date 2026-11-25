@@ -4,6 +4,8 @@ import Foundation
 public enum TimerControl: Equatable, Sendable {
     case adjustLength, startFocus, startBreak, skipBreak
     case pause, resume, endEarly, cancel, skip
+    /// Flow: start one with no set length, and stop it.
+    case startFlow, stop
 }
 
 /// The buttons in two rows: the main action alone on top, the rest beneath.
@@ -38,6 +40,9 @@ extension TimerEngine {
     }
 
     public var controls: [TimerControl] {
+        // A flow ends when the owner stops it; it has no break of its own.
+        if isFlowing { return status == .paused ? [.resume, .stop] : [.stop, .pause] }
+        if flowIsNext { return [.startFlow] }
         // Past zero the focus is done: what's left is taking the break or not.
         if isRunningOver {
             return status == .paused ? [.resume, .startBreak, .skipBreak] : [.startBreak, .pause, .skipBreak]
@@ -53,15 +58,37 @@ extension TimerEngine {
         }
     }
 
-    /// The digits to show: the countdown, or "+4:12" past zero while running over.
+    /// The digits to show: the countdown, "+4:12" past zero while running
+    /// over, or a flow's time so far (no "+": it has no zero to pass).
     public var clockLabel: String {
-        isRunningOver ? "+" + TimeFormat.clock(overtimeSeconds) : TimeFormat.clock(remainingSeconds)
+        if isFlowing { return TimeFormat.clock(overtimeSeconds) }
+        if flowIsNext { return TimeFormat.clock(0) }
+        return isRunningOver ? "+" + TimeFormat.clock(overtimeSeconds) : TimeFormat.clock(remainingSeconds)
+    }
+
+    /// Idle with Flow chosen and a focus next: Start begins a flow.
+    var flowIsNext: Bool { status == .idle && nextKind == .focus && flowChosen }
+
+    /// The line under the Focus | Flow switch: where the cycle stands ("1 of 4",
+    /// "BREAK", "LONG BREAK"), or nothing for a flow, which is outside it.
+    public var cycleLine: String {
+        if isFlowing || flowIsNext { return "" }
+        let label = phaseLabel
+        return label.hasPrefix("FOCUS · ") ? String(label.dropFirst("FOCUS · ".count)) : label
+    }
+
+    /// A flow's ring: hours done, and how far through this one (0..<1). Nil
+    /// unless a flow is running or paused.
+    public var flowLap: (completed: Int, fraction: Double)? {
+        guard isFlowing else { return nil }
+        let seconds = overtimeSeconds
+        return (seconds / 3600, Double(seconds % 3600) / 3600)
     }
 
     /// `controls` split into rows: start, pause or resume on top, the rest beneath.
     public var controlRows: ControlRows {
         let all = controls
-        let mainControls: [TimerControl] = [.startFocus, .startBreak, .pause, .resume]
+        let mainControls: [TimerControl] = [.startFocus, .startFlow, .startBreak, .pause, .resume, .stop]
         guard let main = all.first(where: mainControls.contains) else {
             return ControlRows(main: all[0], others: Array(all.dropFirst()))
         }

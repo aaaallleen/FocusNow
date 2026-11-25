@@ -279,12 +279,13 @@ struct TimerControlsRow: View {
     private func perform(_ control: TimerControl) {
         pendingEdits?.commitAll()
         switch control {
-        case .startFocus, .startBreak: engine.start()
+        case .startFocus, .startBreak, .startFlow: engine.start()
         case .skipBreak, .skip: engine.skipBreak()
         case .pause: engine.pause()
         case .resume: engine.resume()
         case .endEarly: engine.endEarly()
         case .cancel: engine.cancel()
+        case .stop: engine.stop()
         case .adjustLength: break
         }
         onAction(control)
@@ -294,6 +295,8 @@ struct TimerControlsRow: View {
         switch control {
         case .startFocus: "Start focus"
         case .startBreak: "Start break"
+        case .startFlow: "Start flow"
+        case .stop: "Stop"
         case .skipBreak: "Skip break"
         case .pause: "Pause"
         case .resume: "Resume"
