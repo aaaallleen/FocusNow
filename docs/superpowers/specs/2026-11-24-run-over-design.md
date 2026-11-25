@@ -40,7 +40,7 @@ Pomodoro's fixed schedule is the right default, but it sometimes stops the owner
   - The `+m:ss` time then stays in the menu bar without flashing.
   - Today a popover opened by a finish stays until you use it. With the switch on, carrying on working is a legitimate answer, so a click elsewhere counts.
 - **The notification text at zero, with the switch on:** "Focus time is up". Body: "The clock keeps running until you start your break." With the switch off it's unchanged.
-- **Sleep:** the Mac sleeping, or 30 seconds without a tick, pauses the session as today, extra time included.
+- **Sleep:** the Mac sleeping, or 30 seconds without a tick, pauses the session as today, extra time included. While running over, the pause is taken at the last keyboard or mouse input, never before zero. So when the Mac sleeps from idleness before the 10-minute stop, the idle minutes don't count. (Added after the final review: the original line counted them.)
 - **Relaunch:** the app never resumes a session after a relaunch. It logs the session up to its last 15-second checkpoint and ends it. A session counting up gets the same treatment, logged as a finished focus with its extra time up to that checkpoint, with no flash or sound afterwards. (Corrected while planning: the approved draft said it "carries on", which isn't how relaunch works today.)
 
 ## Approaches considered
