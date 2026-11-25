@@ -13,7 +13,7 @@ let source = URL(fileURLWithPath: args.count > 1 ? args[1] : "Resources/Icon/ico
 let outDir = URL(fileURLWithPath: args.count > 2 ? args[2] : "build")
 
 guard let svg = NSImage(contentsOf: source), svg.isValid else {
-    fatalError("could not read \(source.path) (copy icon.svg into Resources/Icon/)")
+    fatalError("could not read \(source.path) as an image")
 }
 
 let canvas = 1024

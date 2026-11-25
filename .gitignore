@@ -9,6 +9,5 @@ build/
 .claude/skills/
 skills-lock.json
 icon.png
-icon.svg
-Resources/Icon/
+/icon.svg
 improvements

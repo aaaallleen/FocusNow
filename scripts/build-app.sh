@@ -8,7 +8,7 @@ cd "$(dirname "$0")/.."
 swift build -c release --product FocusNow
 BIN="$(swift build -c release --show-bin-path)"
 
-# The icon is drawn from Resources/Icon/icon.svg (kept on this Mac, not in git).
+# The icon is drawn from Resources/Icon/icon.svg.
 ICON_SVG=Resources/Icon/icon.svg
 if [ ! -f build/AppIcon.icns ] || [ "$ICON_SVG" -nt build/AppIcon.icns ] || [ scripts/make-icon.swift -nt build/AppIcon.icns ]; then
     swift scripts/make-icon.swift "$ICON_SVG" build
