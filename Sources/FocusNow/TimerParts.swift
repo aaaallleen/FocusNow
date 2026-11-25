@@ -72,16 +72,62 @@ struct CursorArea: NSViewRepresentable {
     }
 }
 
-/// "FOCUS · 1 of 4", "BREAK", "LONG BREAK".
-struct PhaseLabel: View {
+/// The top of the timer: the Focus | Flow switch, and under it where the cycle
+/// stands ("1 of 4", "BREAK", "LONG BREAK"), blank for a flow. The line keeps
+/// its height when blank, so nothing below moves when the switch changes.
+/// Everything scales with `size` (11 in the popover), so the Timer page's zoom
+/// takes the switch along with the rest.
+struct TimerHeader: View {
+    static let switchIdentifier = "timer-focus-flow"
+
     let engine: TimerEngine
     var size: CGFloat = 11
 
+    @Environment(\.colorScheme) private var scheme
+    private var k: CGFloat { size / 11 }
+
     var body: some View {
-        Text(engine.phaseLabel)
-            .font(.system(size: size, weight: .semibold))
-            .tracking(0.8 * size / 11)
-            .foregroundStyle(.secondary)
+        VStack(spacing: 4 * k) {
+            HStack(spacing: 0) {
+                segment("Focus", flow: false)
+                segment("Flow", flow: true)
+            }
+            .padding(2 * k)
+            .background(RoundedRectangle(cornerRadius: 7 * k, style: .continuous).fill(Color.primary.opacity(0.08)))
+            // Locked during a session or a break: dimmed, and VoiceOver says so.
+            .opacity(engine.canChooseFlow ? 1 : 0.45)
+            .disabled(!engine.canChooseFlow)
+            // One control to VoiceOver, "Focus or Flow", holding its two
+            // choices with the chosen one marked selected.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Focus or Flow")
+            .accessibilityIdentifier(Self.switchIdentifier)
+            Text(engine.cycleLine.isEmpty ? " " : engine.cycleLine)
+                .font(.system(size: size, weight: .semibold))
+                .tracking(0.8 * size / 11)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func segment(_ title: String, flow: Bool) -> some View {
+        let selected = engine.flowChosen == flow
+        return Button { engine.chooseFlow(flow) } label: {
+            Text(title)
+                .font(.system(size: 12 * k, weight: .semibold))
+                .foregroundStyle(selected ? .primary : .secondary)
+                .padding(.vertical, 4 * k)
+                .padding(.horizontal, 16 * k)
+                .background {
+                    if selected {
+                        RoundedRectangle(cornerRadius: 5 * k, style: .continuous)
+                            .fill(scheme == .dark ? Color.white.opacity(0.2) : Color.white)
+                            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -239,6 +285,11 @@ struct TimerControlsRow: View {
                     } else {
                         button(control)
                     }
+                }
+                if rows.others.isEmpty {
+                    // Start flow stands alone: the row keeps its height, so
+                    // nothing below moves between Focus and Flow.
+                    button(.stop).hidden().accessibilityHidden(true)
                 }
             }
         }

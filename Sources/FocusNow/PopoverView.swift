@@ -17,7 +17,7 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            PhaseLabel(engine: engine)
+            TimerHeader(engine: engine)
             TimerRing(engine: engine, diameter: 150, editable: true, onBeginEditing: onBeginEditing)
             TimerControlsRow(engine: engine, onAction: onAction)
             TodayBar(engine: engine, settings: settings)
