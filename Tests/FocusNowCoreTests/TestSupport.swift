@@ -42,6 +42,8 @@ func freshDefaults() -> UserDefaults {
     let settings = SettingsBox()
     private(set) var engine: TimerEngine!
     private(set) var finished: [SessionKind] = []
+    /// Seconds since the last keyboard or mouse input, as the engine reads it.
+    var idleSeconds: TimeInterval = 0
 
     init(at iso: String) {
         clock = FakeClock(date(iso))
@@ -53,7 +55,7 @@ func freshDefaults() -> UserDefaults {
         let clock = self.clock
         let engine = TimerEngine(
             settings: { settings.value }, sessions: sessions, snapshots: snapshots,
-            clock: { clock.now }, calendar: utc)
+            clock: { clock.now }, calendar: utc, idleSeconds: { [unowned self] in self.idleSeconds })
         engine.onFinish = { [weak self] kind in self?.finished.append(kind) }
         return engine
     }

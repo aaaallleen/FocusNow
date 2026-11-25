@@ -15,8 +15,12 @@ public final class TimerEngine {
     /// A new day starts a fresh cycle, unless the last session ended less than this long ago
     /// (so a break earned just before midnight survives it).
     public static let dayRolloverGraceSeconds: TimeInterval = 3600
+    /// A focus running over ends after this long without keyboard or mouse input.
+    public static let runOverIdleLimitSeconds: TimeInterval = 600
 
     @ObservationIgnored private let settings: () -> TimerSettings
+    /// Seconds since the owner last used the keyboard or mouse.
+    @ObservationIgnored private let idleSeconds: () -> TimeInterval
     @ObservationIgnored private let sessions: SessionStore
     @ObservationIgnored private let snapshots: SnapshotStore
     @ObservationIgnored private let clock: () -> Date
@@ -59,9 +63,11 @@ public final class TimerEngine {
 
     public init(
         settings: @escaping () -> TimerSettings, sessions: SessionStore,
-        snapshots: SnapshotStore, clock: @escaping () -> Date, calendar: Calendar
+        snapshots: SnapshotStore, clock: @escaping () -> Date, calendar: Calendar,
+        idleSeconds: @escaping () -> TimeInterval = { 0 }
     ) {
         self.settings = settings
+        self.idleSeconds = idleSeconds
         self.sessions = sessions
         self.snapshots = snapshots
         self.clock = clock
@@ -87,6 +93,15 @@ public final class TimerEngine {
         guard let active else { return plannedSecondsForNext }
         let left = TimeInterval(active.plannedSeconds) - active.activeSeconds(at: now)
         return max(0, Int(left.rounded(.up)))
+    }
+
+    /// A focus past zero that keeps counting up until the owner ends it.
+    public var isRunningOver: Bool { active?.timeUpAt != nil }
+
+    /// Whole active seconds past zero, rounded down; 0 unless running over.
+    public var overtimeSeconds: Int {
+        guard let active, active.timeUpAt != nil else { return 0 }
+        return max(0, Int((active.activeSeconds(at: now) - TimeInterval(active.plannedSeconds)).rounded(.down)))
     }
 
     /// 0...1 through the active session; 0 when idle.
@@ -116,8 +131,11 @@ public final class TimerEngine {
 
     // MARK: - Actions
 
+    /// Starts the next session. While a focus runs over (Start break), ends it
+    /// first, with all its time, and starts the break.
     public func start() {
         refreshNow()
+        endRunOver()
         guard status == .idle else { return }
         rollOverDayIfNeeded()
         cycleDay = calendar.startOfDay(for: now)
@@ -157,9 +175,12 @@ public final class TimerEngine {
     }
 
     /// Ends a running or paused break (logging its active time), or skips a
-    /// pending break before it starts. Does nothing when focus is current or next.
+    /// pending break before it starts. While a focus runs over, ends it (with
+    /// all its time) and skips the break after it. Otherwise does nothing when
+    /// focus is current or next.
     public func skipBreak() {
         refreshNow()
+        endRunOver()
         if let session = active {
             guard session.kind.isBreak else { return }
             finish(session, outcome: .endedEarly, at: now)
@@ -185,12 +206,37 @@ public final class TimerEngine {
             rollOverDayIfNeeded()
             return
         }
-        guard !hadGap, status == .running, let session = active else { return }
-        if let endsAt = session.endsAt, now >= endsAt {
-            finish(session, outcome: .completed, at: endsAt)
-        } else if lastSnapshotAt.map({ now.timeIntervalSince($0) >= Self.snapshotIntervalSeconds }) ?? true {
+        guard !hadGap, status == .running, var session = active else { return }
+        if let timeUpAt = session.timeUpAt {
+            // Running over: the owner ends it, or 10 idle minutes do, at the
+            // last input (never before zero). The sound already played at zero.
+            let idle = idleSeconds()
+            if idle >= Self.runOverIdleLimitSeconds {
+                finish(session, outcome: .completed, at: max(timeUpAt, now.addingTimeInterval(-idle)), notify: false)
+                needsAttention = true
+                return
+            }
+        } else if let endsAt = session.endsAt, now >= endsAt {
+            guard session.kind == .focus, settings().allowRunOver else {
+                finish(session, outcome: .completed, at: endsAt)
+                return
+            }
+            session.timeUpAt = endsAt
+            active = session
+            needsAttention = true
+            saveSnapshot()
+            onFinish?(session.kind)
+            return
+        }
+        if lastSnapshotAt.map({ now.timeIntervalSince($0) >= Self.snapshotIntervalSeconds }) ?? true {
             saveSnapshot()
         }
+    }
+
+    /// Ends a focus that is running over as completed, with all its time.
+    private func endRunOver() {
+        guard let session = active, session.timeUpAt != nil else { return }
+        finish(session, outcome: .completed, at: now, notify: false)
     }
 
     /// The Mac is about to sleep: sleep is blank time, so pause.
@@ -202,6 +248,7 @@ public final class TimerEngine {
     /// The app is quitting: log the session so far, as End early would.
     public func prepareForQuit() {
         refreshNow()
+        endRunOver() // it reached zero: a finished focus, not an early end
         if status != .idle, let session = active {
             finish(session, outcome: .endedEarly, at: now)
         }
@@ -227,7 +274,17 @@ public final class TimerEngine {
 
     private func pause(asOf moment: Date) {
         guard status == .running, var session = active else { return }
-        session.accumulatedSeconds = min(TimeInterval(session.plannedSeconds), session.activeSeconds(at: moment))
+        let activeSeconds: TimeInterval
+        if let timeUpAt = session.timeUpAt {
+            // Past zero, the time over the planned length is the owner's to
+            // keep, up to their last input: a Mac that sleeps from idleness
+            // (before the 10-minute stop) mustn't count the minutes it sat idle.
+            let lastInput = now.addingTimeInterval(-idleSeconds())
+            activeSeconds = session.activeSeconds(at: max(timeUpAt, min(moment, lastInput)))
+        } else {
+            activeSeconds = min(TimeInterval(session.plannedSeconds), session.activeSeconds(at: moment))
+        }
+        session.accumulatedSeconds = activeSeconds
         session.lastResumedAt = nil
         active = session
         status = .paused
@@ -251,8 +308,13 @@ public final class TimerEngine {
         // Set against another Focus default (changed while the app was closed): gone.
         focusOverride = snapshot.focusOverride.flatMap { $0.focusMinutes == settings().focusMinutes ? $0 : nil }
         if let session = snapshot.active {
-            let end = min(snapshot.savedAt, session.endsAt ?? snapshot.savedAt)
-            finish(session, outcome: .endedEarly, at: end, notify: false)
+            if session.timeUpAt != nil {
+                // It reached zero: a finished focus, with its time past zero up to the checkpoint.
+                finish(session, outcome: .completed, at: snapshot.savedAt, notify: false)
+            } else {
+                let end = min(snapshot.savedAt, session.endsAt ?? snapshot.savedAt)
+                finish(session, outcome: .endedEarly, at: end, notify: false)
+            }
         }
         rollOverDayIfNeeded()
         saveSnapshot()
@@ -288,7 +350,9 @@ public final class TimerEngine {
     /// Ends `session` at `end`, logging it unless it is a focus session ended
     /// before the one-minute minimum.
     private func finish(_ session: ActiveSession, outcome: Outcome, at end: Date, notify: Bool = true) {
-        let activeSeconds = min(session.plannedSeconds, Int(session.activeSeconds(at: end).rounded()))
+        let measured = Int(session.activeSeconds(at: end).rounded())
+        // A focus that ran over keeps all its time; otherwise at most the planned length.
+        let activeSeconds = session.timeUpAt != nil ? measured : min(session.plannedSeconds, measured)
         active = nil
         status = .idle
 

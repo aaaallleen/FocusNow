@@ -38,6 +38,10 @@ extension TimerEngine {
     }
 
     public var controls: [TimerControl] {
+        // Past zero the focus is done: what's left is taking the break or not.
+        if isRunningOver {
+            return status == .paused ? [.resume, .startBreak, .skipBreak] : [.startBreak, .pause, .skipBreak]
+        }
         let isBreak = (active?.kind ?? nextKind).isBreak
         switch (status, isBreak) {
         case (.idle, false): return [.adjustLength, .startFocus]
@@ -47,6 +51,11 @@ extension TimerEngine {
         case (.running, true): return [.pause, .skip]
         case (.paused, true): return [.resume, .skip]
         }
+    }
+
+    /// The digits to show: the countdown, or "+4:12" past zero while running over.
+    public var clockLabel: String {
+        isRunningOver ? "+" + TimeFormat.clock(overtimeSeconds) : TimeFormat.clock(remainingSeconds)
     }
 
     /// `controls` split into rows: start, pause or resume on top, the rest beneath.

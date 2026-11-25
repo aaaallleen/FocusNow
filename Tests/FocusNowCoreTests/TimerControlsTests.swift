@@ -152,4 +152,28 @@ struct TimerControlsTests {
         e.pause()
         #expect(e.controlRows == ControlRows(main: .resume, others: [.skip]))
     }
+
+    @Test func runningOver() {
+        h.settings.value.allowRunOver = true
+        e.start(); h.run(2400)
+        #expect(e.controls == [.startBreak, .pause, .skipBreak])
+        #expect(e.controlRows == ControlRows(main: .startBreak, others: [.pause, .skipBreak]))
+        #expect(e.phaseLabel == "FOCUS · 1 of 4")
+        e.pause()
+        #expect(e.controls == [.resume, .startBreak, .skipBreak])
+        #expect(e.controlRows == ControlRows(main: .resume, others: [.startBreak, .skipBreak]))
+    }
+
+    @Test func clockLabelCountsUpWhileRunningOver() {
+        h.settings.value.allowRunOver = true
+        #expect(e.clockLabel == "40:00")
+        e.start(); h.run(600)
+        #expect(e.clockLabel == "30:00")
+        h.run(1800)
+        #expect(e.clockLabel == "+00:00")
+        h.run(252)
+        #expect(e.clockLabel == "+04:12")
+        h.run(3723 - 252)
+        #expect(e.clockLabel == "+1:02:03")
+    }
 }

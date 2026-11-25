@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var calendarTimer: Timer?
     private var launchedAsLoginItem = false
     var launchedAsLoginItemForCheck: Bool { launchedAsLoginItem }
+    /// Set only by the self-check, so a test run doesn't depend on whether
+    /// someone is using the Mac: replaces the real time since the last input.
+    var fakeIdleSeconds: TimeInterval?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // A login-item launch starts quietly in the menu bar; any other launch opens the Timer page.
@@ -40,7 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine = TimerEngine(
             settings: { settings.settings }, sessions: sessions,
             snapshots: FileSnapshotStore(url: dataDir.appendingPathComponent("engine-snapshot.json")),
-            clock: clock, calendar: calendar)
+            clock: clock, calendar: calendar,
+            idleSeconds: { [weak self] in self?.fakeIdleSeconds ?? SystemIdle.seconds() })
 
         // The self-check never touches EventKit: it reads made-up events.
         let calendarPrefs = CalendarPreferences(defaults: Self.defaults())
@@ -69,8 +73,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         engine.onFinish = { [weak self] kind in
             guard let self else { return }
-            statusItem.showPopover(fromClick: false)
-            alerter.sessionFinished(kind)
+            // Running over, carrying on is an answer: a click elsewhere closes it.
+            statusItem.showPopover(fromClick: false, closesOnOutsideClick: engine.isRunningOver)
+            alerter.sessionFinished(kind, runningOver: engine.isRunningOver)
         }
         alerter.onNotificationClicked = { [weak self] in
             self?.engine.acknowledge()

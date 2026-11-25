@@ -50,10 +50,15 @@ public struct ActiveSession: Codable, Equatable, Sendable {
     public var accumulatedSeconds: TimeInterval
     /// When the session last started or resumed; nil while paused.
     public var lastResumedAt: Date?
+    /// When the countdown reached zero with running over allowed: from then on
+    /// the focus counts up until the owner ends it. Nil before that, or when
+    /// running over isn't allowed. Optional, so snapshots saved before it
+    /// existed decode as nil.
+    public var timeUpAt: Date?
 
     public init(
         id: UUID = UUID(), kind: SessionKind, startedAt: Date, plannedSeconds: Int,
-        accumulatedSeconds: TimeInterval = 0, lastResumedAt: Date?
+        accumulatedSeconds: TimeInterval = 0, lastResumedAt: Date?, timeUpAt: Date? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -61,6 +66,7 @@ public struct ActiveSession: Codable, Equatable, Sendable {
         self.plannedSeconds = plannedSeconds
         self.accumulatedSeconds = accumulatedSeconds
         self.lastResumedAt = lastResumedAt
+        self.timeUpAt = timeUpAt
     }
 
     /// Active (non-blank) seconds as of `date`.
