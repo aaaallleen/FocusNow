@@ -98,4 +98,29 @@ struct SettingsStoreTests {
         #expect(again.goal(on: date("2026-11-20T12:00:00Z")) == 14_400)
         #expect(again.goal(on: date("2026-11-21T08:00:00Z")) == 18_000)
     }
+
+    @Test func runOverIsOffByDefault() {
+        #expect(TimerSettings().allowRunOver == false)
+        #expect(makeStore().settings.allowRunOver == false)
+    }
+
+    @Test func runOverSurvivesANewStore() {
+        makeStore().settings.allowRunOver = true
+        #expect(makeStore().settings.allowRunOver)
+    }
+
+    /// Settings are one JSON value: a key added later must not make an owner's
+    /// saved settings fail to load and fall back to the defaults.
+    @Test func settingsSavedBeforeRunOverStillLoad() {
+        let old = #"{"focusMinutes":50,"shortBreakMinutes":7,"longBreakMinutes":20,"sessionsBeforeLongBreak":3,"dailyGoalSeconds":7200,"soundOn":false}"#
+        defaults.set(Data(old.utf8), forKey: "settings")
+        let s = makeStore().settings
+        #expect(s.focusMinutes == 50)
+        #expect(s.shortBreakMinutes == 7)
+        #expect(s.longBreakMinutes == 20)
+        #expect(s.sessionsBeforeLongBreak == 3)
+        #expect(s.dailyGoalSeconds == 7200)
+        #expect(s.soundOn == false)
+        #expect(s.allowRunOver == false)
+    }
 }

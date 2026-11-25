@@ -8,8 +8,26 @@ public struct TimerSettings: Equatable, Codable, Sendable {
     public var sessionsBeforeLongBreak = 4
     public var dailyGoalSeconds = 14_400
     public var soundOn = true
+    /// A focus that reaches zero keeps counting up until the owner takes the break.
+    public var allowRunOver = false
 
     public init() {}
+
+    /// Every key is optional: settings saved before a key existed load with
+    /// that one value at its default, rather than failing as a whole and
+    /// resetting everything.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = TimerSettings()
+        focusMinutes = try c.decodeIfPresent(Int.self, forKey: .focusMinutes) ?? d.focusMinutes
+        shortBreakMinutes = try c.decodeIfPresent(Int.self, forKey: .shortBreakMinutes) ?? d.shortBreakMinutes
+        longBreakMinutes = try c.decodeIfPresent(Int.self, forKey: .longBreakMinutes) ?? d.longBreakMinutes
+        sessionsBeforeLongBreak = try c.decodeIfPresent(Int.self, forKey: .sessionsBeforeLongBreak)
+            ?? d.sessionsBeforeLongBreak
+        dailyGoalSeconds = try c.decodeIfPresent(Int.self, forKey: .dailyGoalSeconds) ?? d.dailyGoalSeconds
+        soundOn = try c.decodeIfPresent(Bool.self, forKey: .soundOn) ?? d.soundOn
+        allowRunOver = try c.decodeIfPresent(Bool.self, forKey: .allowRunOver) ?? d.allowRunOver
+    }
 
     public static let minuteRange = 1...180
     public static let sessionsRange = 1...12
