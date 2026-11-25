@@ -157,6 +157,28 @@ struct TimerRing: View {
 
     private var lineWidth: CGFloat { diameter * 8 / 150 }
     private var tint: Color { ThemeColors(palette, scheme: scheme).color(for: engine.displayedKind) }
+
+    /// A flow fills the ring once an hour: the hour before shows full beneath,
+    /// and the colours alternate (the focus colour, then its second shade), so
+    /// there's always something moving.
+    @ViewBuilder private func flowLaps(_ lap: (completed: Int, fraction: Double)) -> some View {
+        if lap.completed > 0 {
+            Circle().inset(by: lineWidth / 2).stroke(lapColour(lap.completed - 1), lineWidth: lineWidth)
+        }
+        Circle()
+            .inset(by: lineWidth / 2)
+            .trim(from: 0, to: lap.fraction)
+            .stroke(lapColour(lap.completed), style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: lap.fraction)
+            // A new hour is a new arc, so it never sweeps backwards from full.
+            .id(lap.completed)
+    }
+
+    private func lapColour(_ hour: Int) -> Color {
+        let colors = ThemeColors(palette, scheme: scheme)
+        return hour % 2 == 0 ? colors.focus : colors.focusSecondLap
+    }
     private var digitFont: Font { .system(size: diameter * 34 / 150, weight: .light) }
     private var canEdit: Bool { editable && engine.controls.contains(.adjustLength) }
 
@@ -169,13 +191,17 @@ struct TimerRing: View {
         // The stroke is drawn inside the frame, so the frame is the ring you see.
         ZStack {
             Circle().inset(by: lineWidth / 2).stroke(Theme.track, lineWidth: lineWidth)
-            Circle()
-                .inset(by: lineWidth / 2)
-                .trim(from: 0, to: progress)
-                .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                // Sweeps linearly between ticks so it reads as continuous motion.
-                .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: progress)
+            if let lap = engine.flowLap {
+                flowLaps(lap)
+            } else {
+                Circle()
+                    .inset(by: lineWidth / 2)
+                    .trim(from: 0, to: progress)
+                    .stroke(tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    // Sweeps linearly between ticks so it reads as continuous motion.
+                    .animation(engine.status == .running ? .linear(duration: 0.5) : nil, value: progress)
+            }
             digits
                 .padding(.horizontal, lineWidth * 1.5)
                 .modifier(RejectShake(trigger: rejections, distance: diameter * 6 / 150))
