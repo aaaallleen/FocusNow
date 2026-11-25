@@ -41,7 +41,9 @@ final class EventKitCalendarSource: CalendarSource {
         guard access == .notAsked else { return access }
         let store = self.store
         _ = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-            store.requestFullAccessToEvents { granted, _ in continuation.resume(returning: granted) }
+            // @Sendable, so the handler isn't main-actor-isolated: EventKit calls
+            // it off the main queue, and an isolated handler would trap there.
+            store.requestFullAccessToEvents { @Sendable granted, _ in continuation.resume(returning: granted) }
         }
         return access // resets the store if access was granted
     }

@@ -26,7 +26,10 @@ final class FinishAlerter: NSObject, UNUserNotificationCenterDelegate {
     func requestAuthorizationIfNeeded() {
         guard !askedForPermission else { return }
         askedForPermission = true
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) { _, _ in }
+        // The async form, not the completion handler: from this @MainActor
+        // class, the handler is inferred main-actor-isolated, and
+        // UserNotifications calls it on its own queue, which traps.
+        Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert]) }
     }
 
     /// Returns whether a sound was (or, in the self-check, would have been) played.

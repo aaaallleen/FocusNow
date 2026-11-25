@@ -251,7 +251,7 @@ final class DebugSnapshots {
     /// Clicks the up (or down) arrow of stepper `index`, top to bottom.
     func clickStepper(_ index: Int, up: Bool, in window: NSWindow) async {
         func walk(_ view: NSView) -> [NSStepper] {
-            ((view as? NSStepper).map { [$0] } ?? []) + view.subviews.flatMap(walk)
+            ((view as? NSStepper).map { [$0] } ?? []) + view.subviews.flatMap { walk($0) }
         }
         let steppers = (window.contentView.map(walk) ?? []).sorted {
             $0.convert($0.bounds, to: nil).maxY > $1.convert($1.bounds, to: nil).maxY
